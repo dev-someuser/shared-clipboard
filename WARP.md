@@ -4,19 +4,19 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Project Overview
 
-This is a shared clipboard system written in Rust, consisting of a WebSocket/HTTP server and a Linux daemon client. The system enables real-time clipboard synchronization across multiple Linux machines through a centralized server.
+This is a shared clipboard system written in Rust, consisting of a WebSocket/HTTP server and a cross-platform daemon client. The system enables real-time clipboard synchronization across multiple machines (Linux and Windows) through a centralized server.
 
 ## Architecture
 
 The project uses a Cargo workspace with two main components:
 
 - **Server** (`/server`): Warp-based HTTP/WebSocket server that manages clipboard state and broadcasts updates to connected clients
-- **Client** (`/client`): Linux daemon that monitors local clipboard changes and synchronizes with the server
+- **Client** (`/client`): Cross-platform daemon that monitors local clipboard changes and synchronizes with the server (supports Linux and Windows)
 
 ### Key Technical Details
 
 - **Communication**: WebSocket for real-time updates + HTTP API for clipboard operations
-- **Clipboard Integration**: Uses `arboard` library for X11/Wayland clipboard access
+- **Clipboard Integration**: Uses `arboard` library for cross-platform clipboard access (X11/Wayland on Linux, Win32 API on Windows)
 - **Concurrency**: Tokio async runtime with broadcast channels for client notifications
 - **Data Format**: JSON messages with `ClipboardData` struct containing content and timestamp
 - **Client Management**: UUID-based client tracking with automatic cleanup on disconnect
@@ -24,6 +24,8 @@ The project uses a Cargo workspace with two main components:
 ## Common Commands
 
 ### Building and Running
+
+#### Linux/macOS
 ```bash
 # Build entire workspace
 cargo build --release
@@ -44,6 +46,30 @@ cd client && cargo run --release
 
 # Run client with custom server URL
 CLIPBOARD_SERVER_URL=http://192.168.1.100:8080 ./start-client.sh
+```
+
+#### Windows
+```cmd
+REM Build entire workspace
+cargo build --release
+
+REM Build specific component
+cargo build --release --bin clipboard-server
+cargo build --release --bin clipboard-client
+
+REM Run server (defaults to 127.0.0.1:8080)
+start-server.bat
+REM or
+cd server && cargo run --release
+
+REM Run client (connects to server)
+start-client.bat
+REM or
+cd client && cargo run --release
+
+REM Run client with custom server URL
+set CLIPBOARD_SERVER_URL=http://192.168.1.100:8080
+start-client.bat
 ```
 
 ### Development Commands
@@ -81,7 +107,9 @@ curl -X POST http://127.0.0.1:8080/api/clipboard \
 
 ## System Dependencies
 
-Before building, install required system packages:
+### Linux
+
+Before building on Linux, install required system packages:
 
 ```bash
 # Ubuntu/Debian
@@ -93,6 +121,14 @@ sudo pacman -S libxcb
 # Fedora  
 sudo dnf install libxcb-devel
 ```
+
+### Windows
+
+No additional system dependencies required on Windows. The client uses Windows API for clipboard access.
+
+**Requirements:**
+- Rust toolchain with MSVC or GNU target
+- Windows 7 or later
 
 ## Development Notes
 
@@ -106,7 +142,9 @@ sudo dnf install libxcb-devel
 - Polls local clipboard every 500ms for changes
 - Sends updates to server via HTTP POST to `/api/clipboard`
 - Receives updates from server via WebSocket connection
-- Handles both X11 and Wayland clipboard systems through arboard
+- Handles multiple clipboard systems through arboard:
+  - Linux: X11 and Wayland
+  - Windows: Win32 API
 
 ### Key Data Structures
 - `ClipboardData`: Contains `content: String` and `timestamp: u64`
@@ -129,7 +167,7 @@ sudo dnf install libxcb-devel
 ### Environment Variables
 - `CLIPBOARD_SERVER_URL`: Server URL for client (default: `http://127.0.0.1:8080`)
 - `RUST_LOG`: Logging level (`debug`, `info`, `warn`, `error`)
-- `DISPLAY`: X11 display (required for clipboard access)
+- `DISPLAY`: X11 display (required for clipboard access on Linux X11)
 
 ### Security Considerations
 - Server listens only on localhost by default
