@@ -43,15 +43,15 @@ jobs:
               body: "## 📋 Shared Clipboard Release ${{ steps.version.outputs.VERSION }}\n\n" +
                     "### Features\n" +
                     "✅ Cross-platform clipboard synchronization (Linux & Windows)\n" +
-                    "✅ Rich text support (HTML, RTF, Images)\n" +
+                    "✅ Rich text support (HTML & RTF)\n" +
                     "✅ Real-time WebSocket updates\n" +
                     "✅ REST API for clipboard operations\n" +
                     "✅ Docker deployment ready\n\n" +
                     "### Downloads\n" +
                     "Choose the appropriate version for your operating system:\n\n" +
                     "**Windows:** shared-clipboard-windows-${{ steps.version.outputs.VERSION }}.zip\n" +
-                    "**Linux:** shared-clipboard-linux-${{ steps.version.outputs.VERSION }}.tar.gz\n" +
-                    "**macOS:** shared-clipboard-macos-${{ steps.version.outputs.VERSION }}.tar.gz\n\n" +
+                    "**Linux:** shared-clipboard-linux-${{ steps.version.outputs.VERSION }}.tar.gz\n\n" +
+                    "*Note: macOS support coming soon!*\n\n" +
                     "### Quick Start\n" +
                     "1. Download the appropriate archive for your OS\n" +
                     "2. Extract the archive\n" +
@@ -95,11 +95,6 @@ jobs:
             suffix: ".exe"
             archive_name: "shared-clipboard-windows"
             archive_format: "zip"
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            suffix: ""
-            archive_name: "shared-clipboard-macos"
-            archive_format: "tar.gz"
 
     steps:
     - name: Checkout code
