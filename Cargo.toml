@@ -3,7 +3,7 @@ members = ["server", "client"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 authors = ["Roman <roman@example.com>"]
 license = "MIT OR Apache-2.0"
 description = "Cross-platform clipboard synchronization system with rich text support"
