@@ -67,6 +67,11 @@ jobs:
               draft: false,
               prerelease: false
             });
+            
+            // Set outputs for the step
+            core.setOutput('result', data.id);
+            core.setOutput('upload_url', data.upload_url);
+            
             return data.id;
           } catch (error) {
             console.log('Error creating release:', error);
@@ -191,14 +196,10 @@ jobs:
         tar -czf ../${{ matrix.config.archive_name }}-${{ steps.version.outputs.VERSION }}.tar.gz *
 
     - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./${{ matrix.config.archive_name }}-${{ steps.version.outputs.VERSION }}.${{ matrix.config.archive_format }}
-        asset_name: ${{ matrix.config.archive_name }}-${{ steps.version.outputs.VERSION }}.${{ matrix.config.archive_format }}
-        asset_content_type: application/octet-stream
+        tag_name: ${{ steps.version.outputs.VERSION }}
+        files: ./${{ matrix.config.archive_name }}-${{ steps.version.outputs.VERSION }}.${{ matrix.config.archive_format }}
 
   # TODO: Add Docker build later
   # build-docker:
