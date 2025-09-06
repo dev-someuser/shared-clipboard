@@ -8,7 +8,15 @@ use warp::Filter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ClipboardData {
+    // Plain text content (always present)
     content: String,
+    // Rich text formats (optional)
+    html: Option<String>,
+    rtf: Option<String>,
+    // Image data as base64 (optional)
+    image: Option<String>,
+    // Metadata
+    content_type: String, // "text", "html", "rtf", "image", "mixed"
     timestamp: u64,
 }
 
@@ -187,7 +195,18 @@ async fn set_clipboard(
     clipboard_state: ClipboardState,
     broadcast_tx: Arc<broadcast::Sender<ClipboardData>>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    info!("Setting clipboard via HTTP API");
+    info!("Setting clipboard via HTTP API: {} chars, type: {}", 
+          data.content.len(), data.content_type);
+    
+    if data.html.is_some() {
+        info!("  - Contains HTML content");
+    }
+    if data.rtf.is_some() {
+        info!("  - Contains RTF content");
+    }
+    if data.image.is_some() {
+        info!("  - Contains image content");
+    }
 
     // Update clipboard state
     {
@@ -209,6 +228,10 @@ async fn get_clipboard(
         Some(data) => Ok(warp::reply::json(data)),
         None => Ok(warp::reply::json(&ClipboardData {
             content: String::new(),
+            html: None,
+            rtf: None,
+            image: None,
+            content_type: "text".to_string(),
             timestamp: 0,
         })),
     }

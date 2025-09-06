@@ -1,16 +1,26 @@
-use arboard::Clipboard;
 use futures_util::{SinkExt, StreamExt};
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::time::interval;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{error, info, warn};
 use url::Url;
 
+mod clipboard_manager;
+use clipboard_manager::ClipboardManager;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ClipboardData {
+    // Plain text content (always present)
     content: String,
+    // Rich text formats (optional)
+    html: Option<String>,
+    rtf: Option<String>,
+    // Image data as base64 (optional)
+    image: Option<String>,
+    // Metadata
+    content_type: String, // "text", "html", "rtf", "image", "mixed"
     timestamp: u64,
 }
 
@@ -22,7 +32,7 @@ struct ClipboardMessage {
 }
 
 struct ClipboardClient {
-    clipboard: Clipboard,
+    clipboard_manager: ClipboardManager,
     http_client: HttpClient,
     server_url: String,
     last_local_content: String,
@@ -30,12 +40,12 @@ struct ClipboardClient {
 }
 
 impl ClipboardClient {
-    fn new(server_url: String) -> Result<Self, Box<dyn std::error::Error>> {
-        let clipboard = Clipboard::new()?;
+    fn new(server_url: String) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let clipboard_manager = ClipboardManager::new()?;
         let http_client = HttpClient::new();
         
         Ok(Self {
-            clipboard,
+            clipboard_manager,
             http_client,
             server_url,
             last_local_content: String::new(),
@@ -43,12 +53,12 @@ impl ClipboardClient {
         })
     }
 
-    async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn start(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Starting clipboard client daemon");
 
         // Get initial clipboard content
-        if let Ok(content) = self.clipboard.get_text() {
-            self.last_local_content = content;
+        if let Ok(clipboard_data) = self.clipboard_manager.get_clipboard_data() {
+            self.last_local_content = clipboard_data.content;
         }
 
         // Connect to WebSocket
@@ -61,7 +71,7 @@ impl ClipboardClient {
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
         // Start clipboard monitoring task
-        let mut clipboard_monitor = Clipboard::new().unwrap();
+        let mut clipboard_manager = ClipboardManager::new().unwrap();
         let mut last_content = self.last_local_content.clone();
         let http_client = self.http_client.clone();
         let server_url = self.server_url.clone();
@@ -72,19 +82,23 @@ impl ClipboardClient {
             loop {
                 interval.tick().await;
                 
-                match clipboard_monitor.get_text() {
-                    Ok(content) => {
-                        if content != last_content && !content.is_empty() {
-                            info!("Local clipboard changed: {} chars", content.len());
-                            last_content = content.clone();
+                match clipboard_manager.get_clipboard_data() {
+                    Ok(clipboard_data) => {
+                        if clipboard_data.content != last_content && !clipboard_data.content.is_empty() {
+                            info!("Local clipboard changed: {} chars, type: {}", 
+                                  clipboard_data.content.len(), clipboard_data.content_type);
                             
-                            let clipboard_data = ClipboardData {
-                                content: content.clone(),
-                                timestamp: SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs(),
-                            };
+                            if clipboard_data.html.is_some() {
+                                info!("  - Has HTML content");
+                            }
+                            if clipboard_data.rtf.is_some() {
+                                info!("  - Has RTF content");
+                            }
+                            if clipboard_data.image.is_some() {
+                                info!("  - Has image content");
+                            }
+                            
+                            last_content = clipboard_data.content.clone();
                             
                             // Send to server via HTTP
                             let url = format!("{}/api/clipboard", server_url);
@@ -109,21 +123,31 @@ impl ClipboardClient {
         });
 
         // Handle WebSocket messages
-        let mut clipboard_setter = Clipboard::new().unwrap();
+        let mut clipboard_setter = ClipboardManager::new().unwrap();
         let websocket_task = tokio::spawn(async move {
             while let Some(msg) = ws_receiver.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
                         if let Ok(clipboard_msg) = serde_json::from_str::<ClipboardMessage>(&text) {
                             if clipboard_msg.msg_type == "clipboard_update" {
-                                info!("Received clipboard update from server: {} chars", 
-                                      clipboard_msg.data.content.len());
+                                info!("Received clipboard update from server: {} chars, type: {}", 
+                                      clipboard_msg.data.content.len(), clipboard_msg.data.content_type);
                                 
-                                // Set clipboard content
-                                if let Err(e) = clipboard_setter.set_text(&clipboard_msg.data.content) {
+                                if clipboard_msg.data.html.is_some() {
+                                    info!("  - Contains HTML content");
+                                }
+                                if clipboard_msg.data.rtf.is_some() {
+                                    info!("  - Contains RTF content");
+                                }
+                                if clipboard_msg.data.image.is_some() {
+                                    info!("  - Contains image content");
+                                }
+                                
+                                // Set rich clipboard content
+                                if let Err(e) = clipboard_setter.set_clipboard_data(&clipboard_msg.data) {
                                     error!("Failed to set clipboard: {}", e);
                                 } else {
-                                    info!("Successfully updated local clipboard");
+                                    info!("Successfully updated local clipboard with rich content");
                                 }
                             }
                         }
@@ -156,7 +180,7 @@ impl ClipboardClient {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
