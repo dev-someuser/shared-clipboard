@@ -40,37 +40,30 @@ jobs:
               repo: context.repo.repo,
               tag_name: '${{ steps.version.outputs.VERSION }}',
               name: 'Shared Clipboard ${{ steps.version.outputs.VERSION }}',
-              body: `## 📋 Shared Clipboard Release ${{ steps.version.outputs.VERSION }}
-
-### Features
-- ✅ Cross-platform clipboard synchronization (Linux & Windows)
-- ✅ Rich text support (HTML, RTF, Images) 
-- ✅ Real-time WebSocket updates
-- ✅ REST API for clipboard operations
-- ✅ Docker deployment ready
-
-### Downloads
-Choose the appropriate version for your operating system:
-
-**Windows:** shared-clipboard-windows-${{ steps.version.outputs.VERSION }}.zip
-**Linux:** shared-clipboard-linux-${{ steps.version.outputs.VERSION }}.tar.gz
-**macOS:** shared-clipboard-macos-${{ steps.version.outputs.VERSION }}.tar.gz
-
-### Quick Start
-1. Download the appropriate archive for your OS
-2. Extract the archive
-3. Run start-server script on one machine
-4. Run start-client script on other machines
-
-### Docker
-\`\`\`bash
-docker run -d -p 8080:8080 ghcr.io/${{ github.repository_owner }}/shared-clipboard-server:${{ steps.version.outputs.VERSION }}
-\`\`\`
-
-### Documentation
-- [Installation Guide](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/README.md)
-- [Docker Guide](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/DOCKER.md)
-              `,
+              body: "## 📋 Shared Clipboard Release ${{ steps.version.outputs.VERSION }}\n\n" +
+                    "### Features\n" +
+                    "✅ Cross-platform clipboard synchronization (Linux & Windows)\n" +
+                    "✅ Rich text support (HTML, RTF, Images)\n" +
+                    "✅ Real-time WebSocket updates\n" +
+                    "✅ REST API for clipboard operations\n" +
+                    "✅ Docker deployment ready\n\n" +
+                    "### Downloads\n" +
+                    "Choose the appropriate version for your operating system:\n\n" +
+                    "**Windows:** shared-clipboard-windows-${{ steps.version.outputs.VERSION }}.zip\n" +
+                    "**Linux:** shared-clipboard-linux-${{ steps.version.outputs.VERSION }}.tar.gz\n" +
+                    "**macOS:** shared-clipboard-macos-${{ steps.version.outputs.VERSION }}.tar.gz\n\n" +
+                    "### Quick Start\n" +
+                    "1. Download the appropriate archive for your OS\n" +
+                    "2. Extract the archive\n" +
+                    "3. Run start-server script on one machine\n" +
+                    "4. Run start-client script on other machines\n\n" +
+                    "### Docker\n" +
+                    "\\`\\`\\`bash\n" +
+                    "docker run -d -p 8080:8080 ghcr.io/${{ github.repository_owner }}/shared-clipboard-server:${{ steps.version.outputs.VERSION }}\n" +
+                    "\\`\\`\\`\n\n" +
+                    "### Documentation\n" +
+                    "[Installation Guide](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/README.md)\n" +
+                    "[Docker Guide](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/DOCKER.md)",
               draft: false,
               prerelease: false
             });
