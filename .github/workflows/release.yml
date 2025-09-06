@@ -1,0 +1,253 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result }}
+      upload_url: ${{ steps.create-release.outputs.upload_url }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Extract version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+    - name: Create Release
+      id: create-release
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data } = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag_name: '${{ steps.version.outputs.VERSION }}',
+            name: 'Shared Clipboard ${{ steps.version.outputs.VERSION }}',
+            body: `
+          ## 📋 Shared Clipboard Release ${{ steps.version.outputs.VERSION }}
+          
+          ### Features
+          - ✅ Cross-platform clipboard synchronization (Linux & Windows)
+          - ✅ Rich text support (HTML, RTF, Images) 
+          - ✅ Real-time WebSocket updates
+          - ✅ REST API for clipboard operations
+          - ✅ Docker deployment ready
+          
+          ### Downloads
+          Choose the appropriate version for your operating system:
+          
+          **Windows:**
+          - \`shared-clipboard-windows.zip\` - Complete Windows package with executables and batch scripts
+          
+          **Linux:**  
+          - \`shared-clipboard-linux.tar.gz\` - Linux binaries and shell scripts
+          
+          **macOS:**
+          - \`shared-clipboard-macos.tar.gz\` - macOS universal binaries
+          
+          ### Quick Start
+          
+          **Windows:**
+          1. Download and extract \`shared-clipboard-windows.zip\`
+          2. Run \`start-server.bat\` on one machine (server)
+          3. Edit client connection in \`start-client.bat\` if needed
+          4. Run \`start-client.bat\` on other machines
+          
+          **Linux/macOS:**
+          1. Download and extract the appropriate archive
+          2. Make scripts executable: \`chmod +x *.sh\`
+          3. Run \`./start-server.sh\` on server machine
+          4. Set \`CLIPBOARD_SERVER_URL\` environment variable if needed
+          5. Run \`./start-client.sh\` on client machines
+          
+          ### Docker Deployment
+          \`\`\`bash
+          # Quick start with Docker
+          docker run -d -p 8080:8080 ghcr.io/your-username/shared-clipboard-server:${{ steps.version.outputs.VERSION }}
+          
+          # Or with docker-compose
+          curl -O https://raw.githubusercontent.com/your-username/shared-clipboard/${{ steps.version.outputs.VERSION }}/docker-compose.yml
+          docker compose up -d
+          \`\`\`
+          
+          ### Documentation
+          - [Installation Guide](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/README.md)
+          - [Docker Deployment](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/DOCKER.md)
+          - [API Documentation](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/WARP.md)
+            `,
+            draft: false,
+            prerelease: false
+          });
+          return data.id;
+
+  build-release:
+    name: Build Release Binaries
+    runs-on: ${{ matrix.config.os }}
+    needs: create-release
+    strategy:
+      matrix:
+        config:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: ""
+            archive_name: "shared-clipboard-linux"
+            archive_format: "tar.gz"
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: ".exe"
+            archive_name: "shared-clipboard-windows"
+            archive_format: "zip"
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: ""
+            archive_name: "shared-clipboard-macos"
+            archive_format: "tar.gz"
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.config.target }}
+
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build release binaries
+      run: cargo build --release --target ${{ matrix.config.target }}
+
+    - name: Extract version from tag
+      id: version
+      shell: bash
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Package binaries (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        mkdir -p release
+        cp target/${{ matrix.config.target }}/release/clipboard-server${{ matrix.config.suffix }} release/
+        cp target/${{ matrix.config.target }}/release/clipboard-client${{ matrix.config.suffix }} release/
+        cp start-server.bat start-client.bat release/
+        echo "# Shared Clipboard for Windows" > release/README.txt
+        echo "" >> release/README.txt
+        echo "## Quick Start:" >> release/README.txt
+        echo "1. Run start-server.bat on one computer (this will be your server)" >> release/README.txt
+        echo "2. Run start-client.bat on other computers to connect to the server" >> release/README.txt
+        echo "" >> release/README.txt
+        echo "## Custom Server URL:" >> release/README.txt
+        echo "Edit start-client.bat and change CLIPBOARD_SERVER_URL if server is on different machine" >> release/README.txt
+        echo "" >> release/README.txt
+        echo "## Documentation:" >> release/README.txt
+        echo "https://github.com/${{ github.repository }}" >> release/README.txt
+
+    - name: Package binaries (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        mkdir -p release
+        cp target/${{ matrix.config.target }}/release/clipboard-server${{ matrix.config.suffix }} release/
+        cp target/${{ matrix.config.target }}/release/clipboard-client${{ matrix.config.suffix }} release/
+        cp start-server.sh start-client.sh release/
+        chmod +x release/clipboard-server release/clipboard-client release/*.sh
+        cat > release/README.md << 'EOF'
+        # Shared Clipboard for ${{ runner.os }}
+        
+        ## Quick Start:
+        1. Make scripts executable: `chmod +x *.sh` (if needed)
+        2. Run `./start-server.sh` on one computer (server)
+        3. Run `./start-client.sh` on other computers to connect
+        
+        ## Custom Server URL:
+        Set environment variable before running client:
+        ```bash
+        export CLIPBOARD_SERVER_URL=http://192.168.1.100:8080
+        ./start-client.sh
+        ```
+        
+        ## Documentation:
+        https://github.com/${{ github.repository }}
+        EOF
+
+    - name: Create archive (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        cd release
+        7z a ../${{ matrix.config.archive_name }}-${{ steps.version.outputs.VERSION }}.zip *
+
+    - name: Create archive (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        cd release
+        tar -czf ../${{ matrix.config.archive_name }}-${{ steps.version.outputs.VERSION }}.tar.gz *
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./${{ matrix.config.archive_name }}-${{ steps.version.outputs.VERSION }}.${{ matrix.config.archive_format }}
+        asset_name: ${{ matrix.config.archive_name }}-${{ steps.version.outputs.VERSION }}.${{ matrix.config.archive_format }}
+        asset_content_type: application/octet-stream
+
+  # Build and push Docker image to GitHub Container Registry
+  build-docker:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: create-release
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository_owner }}/shared-clipboard-server:${{ steps.version.outputs.VERSION }}
+          ghcr.io/${{ github.repository_owner }}/shared-clipboard-server:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

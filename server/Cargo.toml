@@ -1,7 +1,12 @@
 [package]
 name = "clipboard-server"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
+authors.workspace = true
+license.workspace = true
+description = "Cross-platform clipboard synchronization server with WebSocket and HTTP API"
+homepage.workspace = true
+repository.workspace = true
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }

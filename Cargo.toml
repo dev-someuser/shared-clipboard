@@ -2,6 +2,17 @@
 members = ["server", "client"]
 resolver = "2"
 
+[workspace.package]
+version = "1.0.0"
+authors = ["Roman <roman@example.com>"]
+license = "MIT OR Apache-2.0"
+description = "Cross-platform clipboard synchronization system with rich text support"
+homepage = "https://github.com/your-username/shared-clipboard"
+repository = "https://github.com/your-username/shared-clipboard"
+readme = "README.md"
+keywords = ["clipboard", "sync", "cross-platform", "websocket"]
+categories = ["command-line-utilities", "network-programming"]
+
 [workspace.dependencies]
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

@@ -1,189 +1,243 @@
-# Shared Clipboard
+# 📋 Shared Clipboard
 
-Система общего буфера обмена, состоящая из сервера на Rust и клиента-демона для Linux.
+[![Release](https://img.shields.io/github/v/release/your-username/shared-clipboard)](https://github.com/your-username/shared-clipboard/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/your-username/shared-clipboard/ci.yml)](https://github.com/your-username/shared-clipboard/actions)
+[![Docker](https://img.shields.io/badge/docker-ready-blue)](https://github.com/your-username/shared-clipboard/blob/main/DOCKER.md)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](https://github.com/your-username/shared-clipboard/blob/main/LICENSE)
 
-## Архитектура
+**Cross-platform clipboard synchronization system with rich text support** 🚀
 
-Проект состоит из двух компонентов:
+Share your clipboard content in real-time across multiple devices (Linux & Windows) with support for text, HTML, RTF, and images.
 
-1. **Сервер** (`/server`) - принимает запросы на вставку текста в буфер обмена и уведомляет всех подключенных клиентов о новых данных
-2. **Клиент** (`/client`) - демон для Linux, который отслеживает изменения в локальном буфере обмена и синхронизирует их с сервером
+![Demo](https://via.placeholder.com/800x400/1f1f1f/ffffff?text=Shared+Clipboard+Demo)
 
-## Особенности
+## ✨ Features
 
-- Поддержка как X11, так и Wayland (через библиотеку `arboard`)
-- WebSocket соединения для real-time уведомлений
-- HTTP API для отправки данных в буфер обмена
-- Автоматическая синхронизация буфера обмена между всеми подключенными клиентами
-- Логирование с помощью `tracing`
+- 🌐 **Cross-platform**: Linux (X11/Wayland) and Windows support
+- 📝 **Rich text support**: Plain text, HTML, RTF, and images
+- ⚡ **Real-time sync**: WebSocket connections for instant updates
+- 🔌 **REST API**: HTTP endpoints for easy integration
+- 🐳 **Docker ready**: Containerized deployment with health checks
+- 🔧 **Easy setup**: Simple installation with pre-built binaries
+- 📊 **Monitoring**: Built-in health checks and structured logging
 
-## Установка и сборка
+## 🏗️ Architecture
 
-### Предварительные требования
+The system consists of two main components:
 
-- Rust 1.70+ с Cargo
-- На Linux: X11 или Wayland сессия
-- Системные пакеты для работы с буфером обмена:
-  ```bash
-  # Ubuntu/Debian
-  sudo apt install libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
-  
-  # Arch Linux  
-  sudo pacman -S libxcb
-  
-  # Fedora
-  sudo dnf install libxcb-devel
-  ```
+- **Server** (`/server`): Warp-based HTTP/WebSocket server that manages clipboard state
+- **Client** (`/client`): Cross-platform daemon that monitors local clipboard changes
 
-### Сборка
+```
+┌─────────────┐    WebSocket/HTTP    ┌─────────────┐
+│   Client    │ ◄─────────────────► │   Server    │
+│  (Linux)    │                     │  (Rust)     │
+└─────────────┘                     └─────────────┘
+       ▲                                    ▲
+       │                                    │
+   Clipboard                          Clipboard State
+   Monitoring                         & Broadcasting
+       │                                    │
+       ▼                                    ▼
+┌─────────────┐                     ┌─────────────┐
+│   Client    │ ◄─────────────────► │   Client    │
+│ (Windows)   │                     │  (Linux)    │
+└─────────────┘                     └─────────────┘
+```
+
+## 🚀 Quick Start
+
+### Option 1: Download Pre-built Binaries (Recommended)
+
+1. Go to [Releases](https://github.com/your-username/shared-clipboard/releases)
+2. Download the appropriate package for your OS:
+   - **Windows**: `shared-clipboard-windows-v1.0.0.zip`
+   - **Linux**: `shared-clipboard-linux-v1.0.0.tar.gz` 
+   - **macOS**: `shared-clipboard-macos-v1.0.0.tar.gz`
+3. Extract and follow the README inside
+
+### Option 2: Docker Deployment
 
 ```bash
-# Сборка сервера
-cd server
+# Run server in Docker
+docker run -d -p 8080:8080 ghcr.io/your-username/shared-clipboard-server:latest
+
+# Or with docker-compose
+wget https://raw.githubusercontent.com/your-username/shared-clipboard/main/docker-compose.yml
+docker compose up -d
+```
+
+See [DOCKER.md](DOCKER.md) for detailed Docker deployment guide.
+
+### Option 3: Build from Source
+
+**Prerequisites:**
+- Rust 1.70+ with Cargo
+- Linux: X11/Wayland session + system packages
+
+```bash
+# Install system dependencies (Linux only)
+sudo apt install libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+# Clone and build
+git clone https://github.com/your-username/shared-clipboard
+cd shared-clipboard
 cargo build --release
-
-# Сборка клиента
-cd ../client  
-cargo build --release
 ```
 
-## Использование
+## 📚 Usage
 
-### Запуск сервера
+### Using Pre-built Binaries
+
+**Windows:**
+1. Extract `shared-clipboard-windows.zip`
+2. Run `start-server.bat` on one machine (server)
+3. Run `start-client.bat` on other machines
+4. Edit `start-client.bat` to change server URL if needed
+
+**Linux/macOS:**
+1. Extract the archive: `tar -xzf shared-clipboard-linux.tar.gz`
+2. Make executable: `chmod +x *.sh clipboard-*`
+3. Run server: `./start-server.sh`
+4. Run client on other machines: `./start-client.sh`
+5. Set custom server: `export CLIPBOARD_SERVER_URL=http://192.168.1.100:8080`
+
+### Using Docker
 
 ```bash
-cd server
-cargo run --release
+# Start server
+docker run -d -p 8080:8080 \  
+  --name clipboard-server \  
+  ghcr.io/your-username/shared-clipboard-server
+
+# Check status
+docker logs clipboard-server
+curl http://localhost:8080/api/clipboard
 ```
 
-Сервер будет доступен на `http://127.0.0.1:8080`
+## 🔌 API Reference
 
-Доступные эндпоинты:
-- `GET /api/clipboard` - получить текущее содержимое буфера обмена
-- `POST /api/clipboard` - установить содержимое буфера обмена
-- `ws://127.0.0.1:8080/ws` - WebSocket соединение для real-time обновлений
+### HTTP Endpoints
 
-### Запуск клиента
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/clipboard` | Get current clipboard content |
+| `POST` | `/api/clipboard` | Set clipboard content |
+| `WS` | `/ws` | WebSocket for real-time updates |
+
+### Data Format
+
+```json
+{
+  "content": "Plain text content",
+  "html": "<p>Rich HTML content</p>",
+  "rtf": "{\\rtf1 RTF content}",
+  "image": "base64-encoded-image-data",
+  "content_type": "text|html|rtf|image|mixed",
+  "timestamp": 1694234567
+}
+```
+
+### Examples
 
 ```bash
-cd client
-cargo run --release
-```
+# Get clipboard
+curl http://localhost:8080/api/clipboard
 
-По умолчанию клиент подключается к `http://127.0.0.1:8080`. Для изменения адреса сервера используйте переменную окружения:
-
-```bash
-CLIPBOARD_SERVER_URL=http://192.168.1.100:8080 cargo run --release
-```
-
-### Запуск как демон
-
-Для запуска клиента как системного сервиса создайте файл `/etc/systemd/system/clipboard-client.service`:
-
-```ini
-[Unit]
-Description=Shared Clipboard Client
-After=graphical-session.target
-
-[Service]
-Type=simple
-User=yourusername
-Environment=DISPLAY=:0
-Environment=CLIPBOARD_SERVER_URL=http://127.0.0.1:8080
-ExecStart=/path/to/clipboard-client
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-```
-
-Затем:
-
-```bash
-sudo systemctl enable clipboard-client.service
-sudo systemctl start clipboard-client.service
-```
-
-## API
-
-### HTTP API
-
-#### Получить содержимое буфера обмена
-
-```bash
-curl http://127.0.0.1:8080/api/clipboard
-```
-
-#### Установить содержимое буфера обмена
-
-```bash
-curl -X POST http://127.0.0.1:8080/api/clipboard \
+# Set text content
+curl -X POST http://localhost:8080/api/clipboard \
   -H "Content-Type: application/json" \
-  -d '{"content": "Hello World!", "timestamp": 1694234567}'
-```
-
-### WebSocket API
-
-Подключение к WebSocket: `ws://127.0.0.1:8080/ws`
-
-#### Сообщения от сервера к клиенту
-
-```json
-{
-  "type": "clipboard_update",
-  "data": {
-    "content": "текст из буфера обмена",
+  -d '{
+    "content": "Hello World!",
+    "content_type": "text",
     "timestamp": 1694234567
-  }
-}
-```
+  }'
 
-#### Сообщения от клиента к серверу
-
-```json
-{
-  "type": "clipboard_set", 
-  "data": {
-    "content": "новый текст для буфера обмена",
+# Set HTML content
+curl -X POST http://localhost:8080/api/clipboard \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "Hello World!",
+    "html": "<p><strong>Hello</strong> World!</p>",
+    "content_type": "html",
     "timestamp": 1694234567
-  }
-}
+  }'
 ```
 
-## Логи
+## 🔍 Monitoring & Logging
 
-Оба компонента используют `tracing` для логирования. Уровень логирования можно настроить через переменную окружения `RUST_LOG`:
+Configure logging level with `RUST_LOG` environment variable:
 
 ```bash
-RUST_LOG=info cargo run --release    # Информационные сообщения
-RUST_LOG=debug cargo run --release   # Подробные сообщения
-RUST_LOG=warn cargo run --release    # Только предупреждения и ошибки
+export RUST_LOG=info   # Default: info messages
+export RUST_LOG=debug  # Detailed debug information
+export RUST_LOG=warn   # Only warnings and errors
 ```
 
-## Безопасность
+## 🛡️ Security
 
-- Сервер по умолчанию слушает только на localhost (127.0.0.1)
-- Нет аутентификации - система предназначена для использования в доверенной сети
-- Данные передаются в открытом виде
+- Server binds to localhost (127.0.0.1) by default
+- No authentication - intended for trusted networks
+- Data transmitted in plain text
+- Use reverse proxy with SSL for production
 
-## Ограничения
+## 📚 Documentation
 
-- Поддерживается только синхронизация текста (не изображения или файлы)
-- Требуется графическая сессия для работы с буфером обмена
-- Клиент работает только на Linux
+- [Docker Deployment Guide](DOCKER.md)
+- [Technical Documentation](WARP.md)
+- [API Examples](examples/)
+- [Troubleshooting](#-troubleshooting)
 
-## Устранение неполадок
+## 🛠️ Troubleshooting
 
-### Ошибки доступа к буферу обмена
+### Common Issues
 
-Убедитесь, что:
-- У вас запущена X11 или Wayland сессия
-- Установлены необходимые системные библиотеки
-- Переменная `DISPLAY` установлена правильно
+**Clipboard Access Errors (Linux):**
+- Ensure X11 or Wayland session is running
+- Install required system libraries
+- Check `DISPLAY` environment variable
 
-### Проблемы с подключением
+**Connection Issues:**
+- Verify server is running: `curl http://localhost:8080/api/clipboard`
+- Check firewall settings
+- Ensure correct server URL in client
 
-- Проверьте, что сервер запущен и доступен
-- Убедитесь в корректности URL сервера
-- Проверьте логи на наличие ошибок сети
+**Windows Issues:**
+- Run as administrator if clipboard access fails
+- Check antivirus software permissions
+
+### Debug Mode
+
+```bash
+# Enable debug logging
+RUST_LOG=debug ./start-server.sh
+RUST_LOG=debug ./start-client.sh
+
+# Check server health
+curl -f http://localhost:8080/api/clipboard
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Please see:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📝 License
+
+This project is licensed under either of:
+
+- Apache License, Version 2.0
+- MIT License
+
+at your option.
+
+## 📞 Support
+
+- 🐛 [Report Issues](https://github.com/your-username/shared-clipboard/issues)
+- 💬 [Discussions](https://github.com/your-username/shared-clipboard/discussions)
+- 📧 [Security Issues](mailto:security@example.com)
