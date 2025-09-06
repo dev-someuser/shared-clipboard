@@ -71,8 +71,16 @@ async fn main() {
 
     let routes = ws_route.or(api_route).or(get_route);
 
-    info!("Starting clipboard server on 127.0.0.1:8080");
-    warp::serve(routes).run(([127, 0, 0, 1], 8080)).await;
+    // Determine bind address - use 0.0.0.0 in container, 127.0.0.1 otherwise
+    let bind_addr = if std::env::var("DOCKER_ENV").is_ok() {
+        ([0, 0, 0, 0], 8080)
+    } else {
+        ([127, 0, 0, 1], 8080)
+    };
+    
+    info!("Starting clipboard server on {}:8080", 
+          if bind_addr.0 == [0, 0, 0, 0] { "0.0.0.0" } else { "127.0.0.1" });
+    warp::serve(routes).run(bind_addr).await;
 }
 
 async fn ws_handler(

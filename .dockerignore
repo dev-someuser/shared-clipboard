@@ -1,0 +1,42 @@
+# Git и версии
+.git/
+.gitignore
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# IDE файлы
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Временные файлы
+*.tmp
+*.temp
+
+# Логи
+*.log
+
+# Docker файлы (не нужны в контексте сборки)
+Dockerfile
+.dockerignore
+
+# Документация и примеры (не нужны для сервера)
+README.md
+WARP.md
+examples/
+
+# Клиентские файлы (не нужны для сервера)
+client/src/
+start-client.sh
+start-client.bat
+
+# CI/CD конфигурация
+.github/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
