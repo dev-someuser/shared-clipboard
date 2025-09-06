@@ -19,3 +19,26 @@ target
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Project-specific ignores
+# Temporary development files
+*.log
+*.exe
+*.zip
+*.tar.gz
+
+# Versioned temp files
+*-v[0-9]*.bat
+*-v[0-9]*.exe
+clipboard-client-v*.exe
+clipboard-client-windows-v*.bat
+start-client-v*.bat
+
+# Development docs and temp files
+INFINITE_LOOP_FIX.md
+README-Windows.txt
+WINDOWS_CLIENT_v*_README.txt
+test-html-rtf.sh
+windows-package/
+clipboard-client.service
+install-linux.sh

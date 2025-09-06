@@ -1,10 +1,10 @@
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::interval;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 mod clipboard_manager;
@@ -36,7 +36,7 @@ struct ClipboardClient {
     http_client: HttpClient,
     server_url: String,
     last_local_content: String,
-    last_server_timestamp: u64,
+    last_local_image: Option<String>,
 }
 
 impl ClipboardClient {
@@ -49,16 +49,24 @@ impl ClipboardClient {
             http_client,
             server_url,
             last_local_content: String::new(),
-            last_server_timestamp: 0,
+            last_local_image: None,
         })
     }
 
     async fn start(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Starting clipboard client daemon");
+        
+        // On Linux, ensure DISPLAY is set for X11 clipboard access
+        #[cfg(target_os = "linux")]
+        if std::env::var("DISPLAY").is_err() {
+            warn!("DISPLAY environment variable not set - clipboard access may be limited");
+            warn!("Try running: export DISPLAY=:0 before starting the client");
+        }
 
         // Get initial clipboard content
         if let Ok(clipboard_data) = self.clipboard_manager.get_clipboard_data() {
             self.last_local_content = clipboard_data.content;
+            self.last_local_image = clipboard_data.image.clone();
         }
 
         // Connect to WebSocket
@@ -68,25 +76,64 @@ impl ClipboardClient {
         let (ws_stream, _) = connect_async(url).await?;
         info!("Connected to WebSocket server");
         
-        let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+        let (_ws_sender, mut ws_receiver) = ws_stream.split();
 
+        // Create shared clipboard manager for both tasks
+        let shared_clipboard_manager = std::sync::Arc::new(std::sync::Mutex::new(ClipboardManager::new().unwrap()));
+        
         // Start clipboard monitoring task
-        let mut clipboard_manager = ClipboardManager::new().unwrap();
-        let mut last_content = self.last_local_content.clone();
+        let clipboard_manager_for_monitor = shared_clipboard_manager.clone();
         let http_client = self.http_client.clone();
         let server_url = self.server_url.clone();
         
         let monitor_task = tokio::spawn(async move {
-            let mut interval = interval(Duration::from_millis(500));
+            let mut interval = interval(Duration::from_millis(100)); // Very frequent polling for Linux clipboard reliability
             
             loop {
                 interval.tick().await;
                 
-                match clipboard_manager.get_clipboard_data() {
+                // Try to get clipboard data with retry for robustness
+                let clipboard_result = {
+                    let mut attempts = 0;
+                    const MAX_ATTEMPTS: u8 = 3;
+                    let mut last_error = None;
+                    
+                    loop {
+                        attempts += 1;
+                        let result = {
+                            let mut manager = clipboard_manager_for_monitor.lock().unwrap();
+                            manager.get_clipboard_data()
+                        };
+                        
+                        match result {
+                            Ok(data) => break Ok(data),
+                            Err(e) if attempts < MAX_ATTEMPTS => {
+                                last_error = Some(e);
+                                // Small delay between retries
+                                tokio::time::sleep(Duration::from_millis(10)).await;
+                                continue;
+                            }
+                            Err(e) => break Err(e),
+                        }
+                    }
+                };
+                
+                match clipboard_result {
                     Ok(clipboard_data) => {
-                        if clipboard_data.content != last_content && !clipboard_data.content.is_empty() {
-                            info!("Local clipboard changed: {} chars, type: {}", 
-                                  clipboard_data.content.len(), clipboard_data.content_type);
+                        // Use smart change detection to avoid ping-pong loops
+                        let content_changed = {
+                            let mut manager = clipboard_manager_for_monitor.lock().unwrap();
+                            manager.has_content_changed(&clipboard_data, false, None)
+                        };
+                        
+                        if content_changed {
+                            let size_desc = match clipboard_data.content_type.as_str() {
+                                "image" => format!("image data"),
+                                "text" => format!("{} chars", clipboard_data.content.len()),
+                                _ => format!("{} chars + rich content", clipboard_data.content.len()),
+                            };
+                            
+                            info!("Local clipboard changed: {}, type: {}", size_desc, clipboard_data.content_type);
                             
                             if clipboard_data.html.is_some() {
                                 info!("  - Has HTML content");
@@ -98,7 +145,11 @@ impl ClipboardClient {
                                 info!("  - Has image content");
                             }
                             
-                            last_content = clipboard_data.content.clone();
+                            // Mark content as sent before sending to avoid processing it back
+                            {
+                                let mut manager = clipboard_manager_for_monitor.lock().unwrap();
+                                manager.mark_content_as_sent(&clipboard_data);
+                            }
                             
                             // Send to server via HTTP
                             let url = format!("{}/api/clipboard", server_url);
@@ -114,8 +165,14 @@ impl ClipboardClient {
                     }
                     Err(e) => {
                         // Ignore clipboard errors (common when clipboard is empty or inaccessible)
-                        if !e.to_string().contains("empty") {
-                            warn!("Failed to read clipboard: {}", e);
+                        let error_str = e.to_string();
+                        if !error_str.contains("empty") && !error_str.contains("not available") {
+                            // Only log non-trivial errors, but not too frequently
+                            if error_str.contains("Connection") || error_str.contains("Display") {
+                                warn!("Clipboard system error (may need X11/Wayland focus): {}", e);
+                            } else {
+                                debug!("Clipboard access failed: {}", e);
+                            }
                         }
                     }
                 }
@@ -123,7 +180,7 @@ impl ClipboardClient {
         });
 
         // Handle WebSocket messages
-        let mut clipboard_setter = ClipboardManager::new().unwrap();
+        let clipboard_manager_for_websocket = shared_clipboard_manager.clone();
         let websocket_task = tokio::spawn(async move {
             while let Some(msg) = ws_receiver.next().await {
                 match msg {
@@ -132,6 +189,17 @@ impl ClipboardClient {
                             if clipboard_msg.msg_type == "clipboard_update" {
                                 info!("Received clipboard update from server: {} chars, type: {}", 
                                       clipboard_msg.data.content.len(), clipboard_msg.data.content_type);
+                                
+                                // Check if this is our own content returned from server
+                                let is_own_content = {
+                                    let manager = clipboard_manager_for_websocket.lock().unwrap();
+                                    manager.is_own_content_returned(&clipboard_msg.data)
+                                };
+                                
+                                if is_own_content {
+                                    info!("  - This is our own content returned from server, ignoring");
+                                    continue;
+                                }
                                 
                                 if clipboard_msg.data.html.is_some() {
                                     info!("  - Contains HTML content");
@@ -143,11 +211,16 @@ impl ClipboardClient {
                                     info!("  - Contains image content");
                                 }
                                 
-                                // Set rich clipboard content
-                                if let Err(e) = clipboard_setter.set_clipboard_data(&clipboard_msg.data) {
+                                // Use smart clipboard setting to avoid ping-pong loops
+                                let result = {
+                                    let mut manager = clipboard_manager_for_websocket.lock().unwrap();
+                                    manager.set_clipboard_data_from_server(&clipboard_msg.data)
+                                };
+                                
+                                if let Err(e) = result {
                                     error!("Failed to set clipboard: {}", e);
                                 } else {
-                                    info!("Successfully updated local clipboard with rich content");
+                                    info!("Successfully updated local clipboard with rich content (smart mode)");
                                 }
                             }
                         }
@@ -177,6 +250,30 @@ impl ClipboardClient {
 
         Ok(())
     }
+
+    async fn run_with_reconnect(&mut self) {
+        let mut reconnect_delay = Duration::from_secs(1);
+        const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(60);
+        
+        loop {
+            match self.start().await {
+                Ok(()) => {
+                    info!("Connection ended normally, attempting reconnect...");
+                    reconnect_delay = Duration::from_secs(1); // Reset delay on successful connection
+                }
+                Err(e) => {
+                    error!("Connection failed: {}, retrying in {:?}...", e, reconnect_delay);
+                }
+            }
+            
+            tokio::time::sleep(reconnect_delay).await;
+            
+            // Exponential backoff with maximum delay
+            reconnect_delay = std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
+            
+            info!("Attempting to reconnect to {}", self.server_url);
+        }
+    }
 }
 
 #[tokio::main]
@@ -194,11 +291,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     
     // Handle graceful shutdown
     tokio::select! {
-        result = client.start() => {
-            if let Err(e) = result {
-                error!("Client error: {}", e);
-                return Err(e);
-            }
+        _ = client.run_with_reconnect() => {
+            info!("Client reconnection loop ended");
         }
         _ = tokio::signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down...");

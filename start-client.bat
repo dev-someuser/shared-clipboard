@@ -14,4 +14,4 @@ echo Для остановки нажмите Ctrl+C
 echo.
 
 set RUST_LOG=info
-cargo run --release --bin clipboard-client
+clipboard-client.exe

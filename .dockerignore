@@ -29,8 +29,7 @@ README.md
 WARP.md
 examples/
 
-# Клиентские файлы (не нужны для сервера)
-client/src/
+# Клиентские скрипты (не нужны для сервера)
 start-client.sh
 start-client.bat
 

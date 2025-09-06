@@ -10,24 +10,11 @@ RUN apt-get update && apt-get install -y \
 # Создаем рабочую директорию
 WORKDIR /app
 
-# Копируем только конфигурацию сервера
-COPY server/Cargo.toml ./
+# Копируем весь проект (упрощенный подход)
+COPY . .
 
-# Создаем пустой файл для предварительной сборки зависимостей
-RUN mkdir -p src
-RUN echo "fn main() {}" > src/main.rs
-
-# Собираем только зависимости (кэшируется Docker)
-RUN cargo build --release
-
-# Удаляем временные файлы
-RUN rm -rf src
-
-# Копируем реальный исходный код сервера
-COPY server/src ./src
-
-# Пересобираем только наш код
-RUN touch src/main.rs && cargo build --release
+# Собираем сервер
+RUN cargo build --release --bin clipboard-server
 
 # Финальный образ
 FROM debian:bookworm-slim
