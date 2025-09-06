@@ -1,59 +1,59 @@
-# Docker Deployment для Shared Clipboard Server
+# Docker Deployment Guide for Shared Clipboard Server
 
-Этот файл содержит инструкции по развертыванию сервера буфера обмена в Docker контейнере.
+This guide contains instructions for deploying the shared clipboard server in Docker containers.
 
-## Быстрый старт
+## Quick Start
 
-### С помощью Docker Compose (рекомендуется)
+### Using Docker Compose (Recommended)
 
 ```bash
-# Сборка и запуск
+# Build and start
 docker-compose up -d
 
-# Просмотр логов
+# View logs
 docker-compose logs -f clipboard-server
 
-# Остановка
+# Stop
 docker-compose down
 ```
 
-### С помощью Docker CLI
+### Using Docker CLI
 
 ```bash
-# Сборка образа
+# Build image
 docker build -t shared-clipboard-server .
 
-# Запуск контейнера
+# Run container
 docker run -d \
   --name clipboard-server \
   -p 8080:8080 \
   -e RUST_LOG=info \
   shared-clipboard-server
 
-# Просмотр логов
+# View logs
 docker logs -f clipboard-server
 
-# Остановка и удаление
+# Stop and remove
 docker stop clipboard-server
 docker rm clipboard-server
 ```
 
-## Конфигурация
+## Configuration
 
-### Переменные окружения
+### Environment Variables
 
-| Переменная | Значение по умолчанию | Описание |
-|------------|----------------------|----------|
-| `RUST_LOG` | `info` | Уровень логирования (`debug`, `info`, `warn`, `error`) |
-| `RUST_BACKTRACE` | `1` | Включение трассировки стека при ошибках |
+| Variable | Default Value | Description |
+|----------|---------------|-------------|
+| `RUST_LOG` | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
+| `RUST_BACKTRACE` | `1` | Enable stack trace on errors |
 
-### Порты
+### Ports
 
-- **8080**: HTTP API и WebSocket сервер
+- **8080**: HTTP API and WebSocket server
 
-## Производственное развертывание
+## Production Deployment
 
-### С обратным прокси (Nginx)
+### With Reverse Proxy (Nginx)
 
 ```nginx
 server {
@@ -71,14 +71,14 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
         
-        # WebSocket поддержка
+        # WebSocket support
         proxy_read_timeout 86400;
         proxy_send_timeout 86400;
     }
 }
 ```
 
-### С SSL/TLS (Let's Encrypt)
+### With SSL/TLS (Let's Encrypt)
 
 ```yaml
 # docker-compose.prod.yml
@@ -89,9 +89,9 @@ services:
     build: .
     container_name: shared-clipboard-server
     ports:
-      - "127.0.0.1:8080:8080"  # Привязка только к localhost
+      - "127.0.0.1:8080:8080"  # Bind only to localhost
     environment:
-      - RUST_LOG=warn  # Меньше логов в продакшене
+      - RUST_LOG=warn  # Less logging in production
     restart: unless-stopped
     
   nginx:
@@ -110,19 +110,19 @@ services:
 
 ## API Endpoints
 
-После запуска контейнера доступны следующие endpoints:
+After starting the container, the following endpoints are available:
 
-- **GET /api/clipboard** - Получить текущее содержимое буфера обмена
-- **POST /api/clipboard** - Установить содержимое буфера обмена
-- **WebSocket /ws** - WebSocket соединение для real-time обновлений
+- **GET /api/clipboard** - Get current clipboard contents
+- **POST /api/clipboard** - Set clipboard contents
+- **WebSocket /ws** - WebSocket connection for real-time updates
 
-### Примеры использования
+### Usage Examples
 
 ```bash
-# Проверка работоспособности
+# Health check
 curl http://localhost:8080/api/clipboard
 
-# Установка содержимого
+# Set text content
 curl -X POST http://localhost:8080/api/clipboard \
   -H "Content-Type: application/json" \
   -d '{
@@ -133,94 +133,127 @@ curl -X POST http://localhost:8080/api/clipboard \
     "content_type": "text",
     "timestamp": 1694234567
   }'
+
+# Set HTML content
+curl -X POST http://localhost:8080/api/clipboard \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "Hello World!",
+    "html": "<p><strong>Hello</strong> from Docker!</p>",
+    "rtf": null,
+    "image": null,
+    "content_type": "html",
+    "timestamp": 1694234567
+  }'
 ```
 
-## Мониторинг
+## Monitoring
 
 ### Health Check
 
 ```bash
-# Проверка состояния контейнера
+# Check container status
 docker-compose ps
 
-# Ручная проверка health check
+# Manual health check
 curl -f http://localhost:8080/api/clipboard
 ```
 
-### Логи
+### Logs
 
 ```bash
-# Просмотр логов
+# View logs
 docker-compose logs clipboard-server
 
-# Логи в реальном времени
+# Real-time logs
 docker-compose logs -f clipboard-server
 
-# Логи с временными метками
+# Logs with timestamps
 docker-compose logs -t clipboard-server
 ```
 
-### Метрики ресурсов
+### Resource Metrics
 
 ```bash
-# Использование ресурсов
+# Resource usage
 docker stats clipboard-server
 
-# Детальная информация
+# Detailed information
 docker inspect clipboard-server
 ```
 
-## Устранение неполадок
+## Troubleshooting
 
-### Основные проблемы
+### Common Issues
 
-1. **Контейнер не запускается**
+1. **Container won't start**
    ```bash
    docker-compose logs clipboard-server
    ```
 
-2. **Порт уже занят**
+2. **Port already in use**
    ```bash
-   # Найти процесс использующий порт 8080
+   # Find process using port 8080
    lsof -i :8080
    
-   # Или изменить порт в docker-compose.yml
+   # Or change port in docker-compose.yml
    ports:
      - "8081:8080"
    ```
 
-3. **Проблемы с сетью**
+3. **Network issues**
    ```bash
-   # Проверить сетевые настройки
+   # Check network settings
    docker network ls
    docker inspect clipboard-server
    ```
 
-### Отладка
+### Debugging
 
 ```bash
-# Запуск в интерактивном режиме
+# Run in interactive mode
 docker run -it --rm -p 8080:8080 shared-clipboard-server
 
-# Подключение к работающему контейнеру
+# Connect to running container
 docker exec -it clipboard-server /bin/sh
 
-# Пересборка без кеша
+# Rebuild without cache
 docker-compose build --no-cache
 ```
 
-## Обновление
+## Updates
 
 ```bash
-# Остановка сервиса
+# Stop service
 docker-compose down
 
-# Пересборка образа
+# Rebuild image
 docker-compose build
 
-# Запуск обновленной версии
+# Start updated version
 docker-compose up -d
 
-# Проверка обновления
+# Verify update
 curl http://localhost:8080/api/clipboard
 ```
+
+## Security Notes
+
+- Server binds to localhost by default for security
+- No authentication implemented - designed for trusted networks
+- Data transmitted in plaintext - use reverse proxy with SSL for production
+- Only supports text and HTML clipboard content (no images)
+
+## Performance
+
+The containerized server is lightweight and efficient:
+- Memory usage: ~10-20MB
+- CPU usage: Minimal when idle
+- Network: Low bandwidth usage
+- Startup time: < 1 second
+
+For production deployments with multiple clients, consider:
+- Setting appropriate resource limits
+- Using a reverse proxy for SSL termination
+- Implementing proper logging aggregation
+- Setting up monitoring alerts

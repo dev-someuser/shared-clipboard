@@ -16,16 +16,17 @@ The project uses a Cargo workspace with two main components:
 ### Key Technical Details
 
 - **Communication**: WebSocket for real-time updates + HTTP API for clipboard operations
-- **Clipboard Integration**: Uses `arboard` library for cross-platform clipboard access (X11/Wayland on Linux, Win32 API on Windows)
+- **Clipboard Integration**: Uses `wl-clipboard-rs` for Linux Wayland support, PowerShell for Windows
 - **Concurrency**: Tokio async runtime with broadcast channels for client notifications
-- **Data Format**: JSON messages with `ClipboardData` struct containing content and timestamp
+- **Data Format**: JSON messages with `ClipboardData` struct containing content, HTML, RTF, and timestamp
 - **Client Management**: UUID-based client tracking with automatic cleanup on disconnect
+- **Multi-format Support**: Simultaneous text and HTML clipboard formats on Linux via wl-clipboard-rs
 
 ## Common Commands
 
 ### Building and Running
 
-#### Linux/macOS
+#### Linux
 ```bash
 # Build entire workspace
 cargo build --release
@@ -122,6 +123,10 @@ sudo pacman -S libxcb
 sudo dnf install libxcb-devel
 ```
 
+**Requirements:**
+- Wayland compositor (Gnome, KDE, Sway, etc.)
+- wl-clipboard-rs compatible environment
+
 ### Windows
 
 No additional system dependencies required on Windows. The client uses Windows API for clipboard access.
@@ -142,14 +147,15 @@ No additional system dependencies required on Windows. The client uses Windows A
 - Polls local clipboard every 500ms for changes
 - Sends updates to server via HTTP POST to `/api/clipboard`
 - Receives updates from server via WebSocket connection
-- Handles multiple clipboard systems through arboard:
-  - Linux: X11 and Wayland
-  - Windows: Win32 API
+- Platform-specific clipboard integration:
+  - Linux: wl-clipboard-rs for Wayland (multi-format support)
+  - Windows: PowerShell commands for basic clipboard access
 
 ### Key Data Structures
-- `ClipboardData`: Contains `content: String` and `timestamp: u64`
+- `ClipboardData`: Contains `content`, `html`, `rtf`, `image`, `content_type`, and `timestamp`
 - `ClipboardMessage`: WebSocket message wrapper with `type` field and `data`
 - Server maintains both HTTP and WebSocket endpoints for flexibility
+- Multi-format support for rich text clipboard operations
 
 ### Error Handling
 - Client gracefully handles clipboard access errors (common when clipboard is empty)
@@ -167,10 +173,10 @@ No additional system dependencies required on Windows. The client uses Windows A
 ### Environment Variables
 - `CLIPBOARD_SERVER_URL`: Server URL for client (default: `http://127.0.0.1:8080`)
 - `RUST_LOG`: Logging level (`debug`, `info`, `warn`, `error`)
-- `DISPLAY`: X11 display (required for clipboard access on Linux X11)
+- `WAYLAND_DISPLAY`: Wayland display (automatically detected)
 
 ### Security Considerations
 - Server listens only on localhost by default
 - No authentication implemented - designed for trusted networks
 - Data transmitted in plaintext
-- Only text clipboard content supported (no images/files)
+- Supports text, HTML, and RTF clipboard content (images temporarily disabled)

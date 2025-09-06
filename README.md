@@ -7,14 +7,14 @@
 
 **Cross-platform clipboard synchronization system with rich text support** 🚀
 
-Share your clipboard content in real-time across multiple devices (Linux & Windows) with support for text, HTML, RTF, and images.
+Share your clipboard content in real-time across multiple devices (Linux & Windows) with support for plain text, HTML, and RTF formats.
 
 ![Demo](https://via.placeholder.com/800x400/1f1f1f/ffffff?text=Shared+Clipboard+Demo)
 
 ## ✨ Features
 
-- 🌐 **Cross-platform**: Linux (X11/Wayland) and Windows support
-- 📝 **Rich text support**: Plain text, HTML, RTF, and images
+- 🌐 **Cross-platform**: Linux (Wayland) and Windows support
+- 📝 **Rich text support**: Plain text, HTML, and RTF formats
 - ⚡ **Real-time sync**: WebSocket connections for instant updates
 - 🔌 **REST API**: HTTP endpoints for easy integration
 - 🐳 **Docker ready**: Containerized deployment with health checks
@@ -51,10 +51,11 @@ The system consists of two main components:
 
 1. Go to [Releases](https://github.com/your-username/shared-clipboard/releases)
 2. Download the appropriate package for your OS:
-   - **Windows**: `shared-clipboard-windows-v1.0.0.zip`
-   - **Linux**: `shared-clipboard-linux-v1.0.0.tar.gz` 
-   - **macOS**: `shared-clipboard-macos-v1.0.0.tar.gz`
+   - **Windows**: `shared-clipboard-windows-v1.1.0.zip`
+   - **Linux**: `shared-clipboard-linux-v1.1.0.tar.gz`
 3. Extract and follow the README inside
+
+*Note: macOS support coming soon!*
 
 ### Option 2: Docker Deployment
 
@@ -73,7 +74,7 @@ See [DOCKER.md](DOCKER.md) for detailed Docker deployment guide.
 
 **Prerequisites:**
 - Rust 1.70+ with Cargo
-- Linux: X11/Wayland session + system packages
+- Linux: Wayland session + system packages
 
 ```bash
 # Install system dependencies (Linux only)
@@ -95,7 +96,7 @@ cargo build --release
 3. Run `start-client.bat` on other machines
 4. Edit `start-client.bat` to change server URL if needed
 
-**Linux/macOS:**
+**Linux:**
 1. Extract the archive: `tar -xzf shared-clipboard-linux.tar.gz`
 2. Make executable: `chmod +x *.sh clipboard-*`
 3. Run server: `./start-server.sh`
@@ -132,8 +133,8 @@ curl http://localhost:8080/api/clipboard
   "content": "Plain text content",
   "html": "<p>Rich HTML content</p>",
   "rtf": "{\\rtf1 RTF content}",
-  "image": "base64-encoded-image-data",
-  "content_type": "text|html|rtf|image|mixed",
+  "image": null,
+  "content_type": "text|html|rtf|mixed",
   "timestamp": 1694234567
 }
 ```
@@ -193,9 +194,9 @@ export RUST_LOG=warn   # Only warnings and errors
 ### Common Issues
 
 **Clipboard Access Errors (Linux):**
-- Ensure X11 or Wayland session is running
+- Ensure Wayland session is running
 - Install required system libraries
-- Check `DISPLAY` environment variable
+- Check Wayland compositor compatibility
 
 **Connection Issues:**
 - Verify server is running: `curl http://localhost:8080/api/clipboard`
