@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*'  # Triggers on version tags like v1.0.0
 
+permissions:
+  contents: write
+  packages: write
+  actions: read
+  security-events: write
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -28,67 +34,51 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const { data } = await github.rest.repos.createRelease({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            tag_name: '${{ steps.version.outputs.VERSION }}',
-            name: 'Shared Clipboard ${{ steps.version.outputs.VERSION }}',
-            body: `
-          ## 📋 Shared Clipboard Release ${{ steps.version.outputs.VERSION }}
-          
-          ### Features
-          - ✅ Cross-platform clipboard synchronization (Linux & Windows)
-          - ✅ Rich text support (HTML, RTF, Images) 
-          - ✅ Real-time WebSocket updates
-          - ✅ REST API for clipboard operations
-          - ✅ Docker deployment ready
-          
-          ### Downloads
-          Choose the appropriate version for your operating system:
-          
-          **Windows:**
-          - \`shared-clipboard-windows.zip\` - Complete Windows package with executables and batch scripts
-          
-          **Linux:**  
-          - \`shared-clipboard-linux.tar.gz\` - Linux binaries and shell scripts
-          
-          **macOS:**
-          - \`shared-clipboard-macos.tar.gz\` - macOS universal binaries
-          
-          ### Quick Start
-          
-          **Windows:**
-          1. Download and extract \`shared-clipboard-windows.zip\`
-          2. Run \`start-server.bat\` on one machine (server)
-          3. Edit client connection in \`start-client.bat\` if needed
-          4. Run \`start-client.bat\` on other machines
-          
-          **Linux/macOS:**
-          1. Download and extract the appropriate archive
-          2. Make scripts executable: \`chmod +x *.sh\`
-          3. Run \`./start-server.sh\` on server machine
-          4. Set \`CLIPBOARD_SERVER_URL\` environment variable if needed
-          5. Run \`./start-client.sh\` on client machines
-          
-          ### Docker Deployment
-          \`\`\`bash
-          # Quick start with Docker
-          docker run -d -p 8080:8080 ghcr.io/your-username/shared-clipboard-server:${{ steps.version.outputs.VERSION }}
-          
-          # Or with docker-compose
-          curl -O https://raw.githubusercontent.com/your-username/shared-clipboard/${{ steps.version.outputs.VERSION }}/docker-compose.yml
-          docker compose up -d
-          \`\`\`
-          
-          ### Documentation
-          - [Installation Guide](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/README.md)
-          - [Docker Deployment](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/DOCKER.md)
-          - [API Documentation](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/WARP.md)
-            `,
-            draft: false,
-            prerelease: false
-          });
-          return data.id;
+          try {
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: '${{ steps.version.outputs.VERSION }}',
+              name: 'Shared Clipboard ${{ steps.version.outputs.VERSION }}',
+              body: `## 📋 Shared Clipboard Release ${{ steps.version.outputs.VERSION }}
+
+### Features
+- ✅ Cross-platform clipboard synchronization (Linux & Windows)
+- ✅ Rich text support (HTML, RTF, Images) 
+- ✅ Real-time WebSocket updates
+- ✅ REST API for clipboard operations
+- ✅ Docker deployment ready
+
+### Downloads
+Choose the appropriate version for your operating system:
+
+**Windows:** shared-clipboard-windows-${{ steps.version.outputs.VERSION }}.zip
+**Linux:** shared-clipboard-linux-${{ steps.version.outputs.VERSION }}.tar.gz
+**macOS:** shared-clipboard-macos-${{ steps.version.outputs.VERSION }}.tar.gz
+
+### Quick Start
+1. Download the appropriate archive for your OS
+2. Extract the archive
+3. Run start-server script on one machine
+4. Run start-client script on other machines
+
+### Docker
+\`\`\`bash
+docker run -d -p 8080:8080 ghcr.io/${{ github.repository_owner }}/shared-clipboard-server:${{ steps.version.outputs.VERSION }}
+\`\`\`
+
+### Documentation
+- [Installation Guide](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/README.md)
+- [Docker Guide](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/DOCKER.md)
+              `,
+              draft: false,
+              prerelease: false
+            });
+            return data.id;
+          } catch (error) {
+            console.log('Error creating release:', error);
+            throw error;
+          }
 
   build-release:
     name: Build Release Binaries
@@ -217,37 +207,6 @@ jobs:
         asset_name: ${{ matrix.config.archive_name }}-${{ steps.version.outputs.VERSION }}.${{ matrix.config.archive_format }}
         asset_content_type: application/octet-stream
 
-  # Build and push Docker image to GitHub Container Registry
-  build-docker:
-    name: Build and Push Docker Image
-    runs-on: ubuntu-latest
-    needs: create-release
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract version from tag
-      id: version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: |
-          ghcr.io/${{ github.repository_owner }}/shared-clipboard-server:${{ steps.version.outputs.VERSION }}
-          ghcr.io/${{ github.repository_owner }}/shared-clipboard-server:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+  # TODO: Add Docker build later
+  # build-docker:
+  #   name: Build and Push Docker Image
