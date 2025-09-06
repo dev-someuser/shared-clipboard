@@ -9,7 +9,7 @@ use wl_clipboard_rs::{
 };
 
 #[cfg(target_os = "windows")]
-use std::process::Command;
+use clipboard_win::{formats, get_clipboard, set_clipboard};
 
 /// Cross-platform clipboard manager using native APIs
 /// - Linux: wl-clipboard-rs for Wayland/X11 support
@@ -357,19 +357,15 @@ impl ClipboardManager {
         Ok(())
     }
 
-    // Windows implementations (using system commands for now)
+    // Windows implementations using clipboard-win
     #[cfg(target_os = "windows")]
     fn get_text_content(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        // Simple implementation using PowerShell for now
-        let output = Command::new("powershell")
-            .args(["-Command", "Get-Clipboard"])
-            .output()?;
-
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            Ok(text.trim_end().to_string())
-        } else {
-            Err("Failed to get clipboard text on Windows".into())
+        match get_clipboard(formats::Unicode) {
+            Ok(text) => Ok(text),
+            Err(e) => {
+                debug!("Failed to get text via clipboard-win: {}", e);
+                Err(format!("Failed to get clipboard text: {}", e).into())
+            }
         }
     }
 
@@ -389,16 +385,14 @@ impl ClipboardManager {
 
     #[cfg(target_os = "windows")]
     fn set_text_content(&self, text: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut child = Command::new("powershell")
-            .args(["-Command", &format!("Set-Clipboard -Value '{}'", text.replace("'", "''"))])
-            .spawn()?;
-
-        let status = child.wait()?;
-        if status.success() {
-            debug!("Successfully set text content on Windows: {} chars", text.len());
-            Ok(())
-        } else {
-            Err("Failed to set clipboard text on Windows".into())
+        match set_clipboard(formats::Unicode, text) {
+            Ok(()) => {
+                debug!("Successfully set text content on Windows: {} chars", text.len());
+                Ok(())
+            }
+            Err(e) => {
+                Err(format!("Failed to set clipboard text: {}", e).into())
+            }
         }
     }
 
