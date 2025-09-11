@@ -10,6 +10,9 @@ use url::Url;
 mod clipboard_manager;
 use clipboard_manager::ClipboardManager;
 
+#[cfg(target_os = "linux")]
+mod tray;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ClipboardData {
     // Plain text content (always present)
@@ -37,6 +40,8 @@ struct ClipboardClient {
     server_url: String,
     last_local_content: String,
     last_local_image: Option<String>,
+    #[cfg(target_os = "linux")]
+    tray: Option<tray::TrayController>,
 }
 
 impl ClipboardClient {
@@ -44,12 +49,19 @@ impl ClipboardClient {
         let clipboard_manager = ClipboardManager::new()?;
         let http_client = HttpClient::new();
         
+        #[cfg(target_os = "linux")]
+        let tray = Some(tray::start_tray(server_url.clone()));
+        #[cfg(not(target_os = "linux"))]
+        let tray: Option<()> = None;
+
         Ok(Self {
             clipboard_manager,
             http_client,
             server_url,
             last_local_content: String::new(),
             last_local_image: None,
+            #[cfg(target_os = "linux")]
+            tray,
         })
     }
 
@@ -75,6 +87,12 @@ impl ClipboardClient {
         
         let (ws_stream, _) = connect_async(url).await?;
         info!("Connected to WebSocket server");
+        
+        // Update tray connectivity status
+        #[cfg(target_os = "linux")]
+        if let Some(tray) = &self.tray {
+            tray.set_connected(true);
+        }
         
         let (_ws_sender, mut ws_receiver) = ws_stream.split();
 
@@ -246,6 +264,12 @@ impl ClipboardClient {
             _ = websocket_task => {
                 info!("WebSocket task ended");
             }
+        }
+
+        // Mark tray as disconnected before returning
+        #[cfg(target_os = "linux")]
+        if let Some(tray) = &self.tray {
+            tray.set_connected(false);
         }
 
         Ok(())

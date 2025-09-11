@@ -22,6 +22,7 @@ url = "2.0"
 # Platform-specific clipboard dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 wl-clipboard-rs = "0.8"
+ksni = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5.0"
