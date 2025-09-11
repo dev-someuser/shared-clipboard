@@ -12,6 +12,10 @@ use clipboard_manager::ClipboardManager;
 
 #[cfg(target_os = "linux")]
 mod tray;
+#[cfg(target_os = "windows")]
+mod tray_win;
+
+mod settings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ClipboardData {
@@ -37,31 +41,42 @@ struct ClipboardMessage {
 struct ClipboardClient {
     clipboard_manager: ClipboardManager,
     http_client: HttpClient,
-    server_url: String,
+    server_url: std::sync::Arc<std::sync::Mutex<String>>,
     last_local_content: String,
     last_local_image: Option<String>,
     #[cfg(target_os = "linux")]
     tray: Option<tray::TrayController>,
+    #[cfg(target_os = "windows")]
+    tray_win: Option<tray_win::TrayController>,
 }
 
 impl ClipboardClient {
     fn new(server_url: String) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let clipboard_manager = ClipboardManager::new()?;
         let http_client = HttpClient::new();
-        
+        let server_url_arc = std::sync::Arc::new(std::sync::Mutex::new(server_url.clone()));
+
+        let on_new_url = {
+            let server_url_arc = server_url_arc.clone();
+            move |new_url: String| {
+                *server_url_arc.lock().unwrap() = new_url;
+            }
+        };
         #[cfg(target_os = "linux")]
-        let tray = Some(tray::start_tray(server_url.clone()));
-        #[cfg(not(target_os = "linux"))]
-        let tray: Option<()> = None;
+        let tray = Some(tray::start_tray(server_url.clone(), on_new_url));
+        #[cfg(target_os = "windows")]
+        let tray_win = Some(tray_win::start_tray(server_url.clone(), on_new_url));
 
         Ok(Self {
             clipboard_manager,
             http_client,
-            server_url,
+            server_url: server_url_arc,
             last_local_content: String::new(),
             last_local_image: None,
             #[cfg(target_os = "linux")]
             tray,
+            #[cfg(target_os = "windows")]
+            tray_win,
         })
     }
 
@@ -82,7 +97,8 @@ impl ClipboardClient {
         }
 
         // Connect to WebSocket
-        let ws_url = format!("ws://{}/ws", self.server_url.replace("http://", "").replace("https://", ""));
+        let current_url = self.server_url.lock().unwrap().clone();
+        let ws_url = format!("ws://{}/ws", current_url.replace("http://", "").replace("https://", ""));
         let url = Url::parse(&ws_url)?;
         
         let (ws_stream, _) = connect_async(url).await?;
@@ -91,6 +107,10 @@ impl ClipboardClient {
         // Update tray connectivity status
         #[cfg(target_os = "linux")]
         if let Some(tray) = &self.tray {
+            tray.set_connected(true);
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(tray) = &self.tray_win {
             tray.set_connected(true);
         }
         
@@ -170,7 +190,10 @@ impl ClipboardClient {
                             }
                             
                             // Send to server via HTTP
-                            let url = format!("{}/api/clipboard", server_url);
+                            let url = {
+                                let base = server_url.lock().unwrap().clone();
+                                format!("{}/api/clipboard", base)
+                            };
                             if let Err(e) = http_client
                                 .post(&url)
                                 .json(&clipboard_data)
@@ -271,6 +294,10 @@ impl ClipboardClient {
         if let Some(tray) = &self.tray {
             tray.set_connected(false);
         }
+        #[cfg(target_os = "windows")]
+        if let Some(tray) = &self.tray_win {
+            tray.set_connected(false);
+        }
 
         Ok(())
     }
@@ -295,7 +322,7 @@ impl ClipboardClient {
             // Exponential backoff with maximum delay
             reconnect_delay = std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
             
-            info!("Attempting to reconnect to {}", self.server_url);
+            info!("Attempting to reconnect to {}", self.server_url.lock().unwrap().as_str());
         }
     }
 }
@@ -304,6 +331,27 @@ impl ClipboardClient {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
+
+    // If launched in standalone settings mode, run UI on this process main thread
+    {
+        let mut args = std::env::args().collect::<Vec<_>>();
+        if args.iter().any(|a| a == "--settings") {
+            // Parse args
+            let mut url = std::env::var("CLIPBOARD_SERVER_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+            for a in &args {
+                if let Some(s) = a.strip_prefix("--url=") { url = s.to_string(); }
+            }
+            let connected = args.iter().any(|a| a == "--connected");
+            #[cfg(feature = "settings_gui")]
+            {
+                if let Some(new_url) = crate::settings::run_settings_ui(url, connected) {
+                    println!("{}", new_url);
+                }
+            }
+            // Exit process after settings
+            return Ok(());
+        }
+    }
 
     // Get server URL from environment or use default
     let server_url = std::env::var("CLIPBOARD_SERVER_URL")

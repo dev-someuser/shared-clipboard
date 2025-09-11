@@ -2,11 +2,12 @@
 // Provides a tray icon with a status label (disabled) and an Exit action.
 
 #[cfg(target_os = "linux")]
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 
 #[cfg(target_os = "linux")]
 pub struct TrayController {
     connected: Arc<AtomicBool>,
+    server_url: Arc<Mutex<String>>,
     handle: ksni::Handle<AppTray>,
 }
 
@@ -21,9 +22,10 @@ impl TrayController {
 }
 
 #[cfg(target_os = "linux")]
-pub fn start_tray(server_url: String) -> TrayController {
+pub fn start_tray(server_url: String, on_new_url: impl Fn(String) + Send + Sync + 'static) -> TrayController {
     let connected = Arc::new(AtomicBool::new(false));
-    let tray = AppTray::new(server_url.clone(), connected.clone());
+    let server_url_arc = Arc::new(Mutex::new(server_url.clone()));
+    let tray = AppTray::new(server_url_arc.clone(), connected.clone(), Arc::new(on_new_url));
     let service = ksni::TrayService::new(tray);
     let handle = service.handle();
     // Spawn the tray service on a separate thread
@@ -31,19 +33,20 @@ pub fn start_tray(server_url: String) -> TrayController {
         service.spawn();
     });
 
-    TrayController { connected, handle }
+    TrayController { connected, server_url: server_url_arc, handle }
 }
 
 #[cfg(target_os = "linux")]
 struct AppTray {
-    server_url: String,
+    server_url: Arc<Mutex<String>>,
     connected: Arc<AtomicBool>,
+    on_new_url: Arc<dyn Fn(String) + Send + Sync>,
 }
 
 #[cfg(target_os = "linux")]
 impl AppTray {
-    fn new(server_url: String, connected: Arc<AtomicBool>) -> Self {
-        Self { server_url, connected }
+    fn new(server_url: Arc<Mutex<String>>, connected: Arc<AtomicBool>, on_new_url: Arc<dyn Fn(String) + Send + Sync>) -> Self {
+        Self { server_url, connected, on_new_url }
     }
     fn set_connected(&mut self, connected: bool) {
         self.connected.store(connected, Ordering::Relaxed);
@@ -112,10 +115,11 @@ impl ksni::Tray for AppTray {
     }
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        let current_url = self.server_url.lock().unwrap().clone();
         let status_text = if self.connected.load(Ordering::Relaxed) {
-            format!("Connected • {}", self.server_url)
+            format!("Connected • {}", current_url)
         } else {
-            format!("Disconnected • {}", self.server_url)
+            format!("Disconnected • {}", current_url)
         };
 
         vec![
@@ -126,11 +130,67 @@ impl ksni::Tray for AppTray {
             }),
             ksni::MenuItem::Separator,
             ksni::MenuItem::Standard(ksni::menu::StandardItem {
-                label: "Quit".into(),
-                activate: Box::new(|_| {
-                    // Terminate the process immediately
-                    std::process::exit(0);
+                label: "Settings".into(),
+                activate: Box::new(|me| {
+                    let current_url = me.server_url.lock().unwrap().clone();
+
+                    #[cfg(feature = "settings_gui")]
+                    {
+                        let connected = me.connected.load(Ordering::Relaxed);
+                        if let Some(new_url) = crate::settings::open_settings_blocking(current_url.clone(), connected) {
+                            *(me.server_url.lock().unwrap()) = new_url.clone();
+                            (me.on_new_url)(new_url);
+                            me.set_connected(me.connected.load(Ordering::Relaxed));
+                            return;
+                        } else {
+                            return; // closed/cancelled
+                        }
+                    }
+
+                    #[cfg(not(feature = "settings_gui"))]
+                    {
+                        // Fallback: Try a lightweight external dialog to edit the URL (zenity/kdialog)
+                        fn try_zenity(input: &str) -> Option<String> {
+                            let output = std::process::Command::new("zenity")
+                                .arg("--entry")
+                                .arg("--title=Shared Clipboard - Settings")
+                                .arg("--text=Server URL:")
+                                .arg(format!("--entry-text={}", input))
+                                .output()
+                                .ok()?;
+                            if output.status.success() {
+                                let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                                if !s.is_empty() { Some(s) } else { None }
+                            } else { None }
+                        }
+
+                        fn try_kdialog(input: &str) -> Option<String> {
+                            let output = std::process::Command::new("kdialog")
+                                .arg("--inputbox")
+                                .arg("Server URL:")
+                                .arg(input)
+                                .output()
+                                .ok()?;
+                            if output.status.success() {
+                                let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                                if !s.is_empty() { Some(s) } else { None }
+                            } else { None }
+                        }
+
+                        let new_url = try_zenity(&current_url).or_else(|| try_kdialog(&current_url));
+                        if let Some(new_url) = new_url {
+                            *(me.server_url.lock().unwrap()) = new_url.clone();
+                            (me.on_new_url)(new_url);
+                            me.set_connected(me.connected.load(Ordering::Relaxed));
+                        }
+                    }
                 }),
+                ..Default::default()
+            }),
+            ksni::MenuItem::Separator,
+            ksni::MenuItem::Standard(ksni::menu::StandardItem {
+                label: "Quit".into(),
+                activate: Box::new(|_| { std::process::exit(0); }),
                 ..Default::default()
             }),
         ]

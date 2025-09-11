@@ -10,7 +10,7 @@ repository.workspace = true
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json", "stream"] }
 tokio-tungstenite = "0.18"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -19,6 +19,23 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 url = "2.0"
 
+# Settings GUI feature toggles eframe (pinned to 0.24 to avoid `image` v0.25)
+[features]
+# Disable by default; enable with `--features settings_gui`
+settings_gui = ["dep:eframe", "dep:winit"]
+
+auto-settings = []
+
+[dependencies.eframe]
+version = "=0.24.1"
+optional = true
+default-features = false
+features = ["glow", "default_fonts"]
+
+[dependencies.winit]
+version = "0.28"
+optional = true
+
 # Platform-specific clipboard dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 wl-clipboard-rs = "0.8"
@@ -26,3 +43,4 @@ ksni = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5.0"
+tray-icon = "0.14"
