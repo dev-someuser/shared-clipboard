@@ -1,182 +1,81 @@
 # WARP.md
 
-This file provides guidance to WARP (warp.dev) when working with code in this repository.
+Guidance for working with this repository in Warp (and a concise technical reference).
 
-## Project Overview
+## Overview
 
-This is a shared clipboard system written in Rust, consisting of a WebSocket/HTTP server and a cross-platform daemon client. The system enables real-time clipboard synchronization across multiple machines (Linux and Windows) through a centralized server.
+A Rust workspace with two components:
+- Server (`server/`): Warp HTTP + WebSocket; keeps last clipboard and broadcasts updates
+- Client (`client/`): Daemon that syncs local clipboard with the server (Linux + Windows)
 
-## Architecture
+## Key technical details
 
-The project uses a Cargo workspace with two main components:
+- Transport: WebSocket for realtime; HTTP for setting and reading clipboard
+- Linux clipboard: wl-clipboard-rs
+- Windows clipboard: clipboard-win
+- Tray:
+  - Linux: ksni (StatusNotifier) + generated icon; menu: status, Settings, Quit
+  - Windows: tray-icon + generated icon; menu: status, Settings, Quit
+- Settings window: eframe/egui — edit URL, test, Save (only Save applies changes)
+- Reconnect loop with exponential backoff (1s..60s)
+- Client keeps server URL in Arc<Mutex<String>> so it can be updated at runtime from Settings
 
-- **Server** (`/server`): Warp-based HTTP/WebSocket server that manages clipboard state and broadcasts updates to connected clients
-- **Client** (`/client`): Cross-platform daemon that monitors local clipboard changes and synchronizes with the server (supports Linux and Windows)
+## Build & run
 
-### Key Technical Details
-
-- **Communication**: WebSocket for real-time updates + HTTP API for clipboard operations
-- **Clipboard Integration**: Uses `wl-clipboard-rs` for Linux Wayland support, PowerShell for Windows
-- **Concurrency**: Tokio async runtime with broadcast channels for client notifications
-- **Data Format**: JSON messages with `ClipboardData` struct containing content, HTML, RTF, and timestamp
-- **Client Management**: UUID-based client tracking with automatic cleanup on disconnect
-- **Multi-format Support**: Simultaneous text and HTML clipboard formats on Linux via wl-clipboard-rs
-
-## Common Commands
-
-### Building and Running
-
-#### Linux
+Linux:
 ```bash
-# Build entire workspace
-cargo build --release
-
-# Build specific component  
+sudo apt-get install -y libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libdbus-1-dev
 cargo build --release --bin clipboard-server
 cargo build --release --bin clipboard-client
-
-# Run server (defaults to 127.0.0.1:8080)
 ./start-server.sh
-# or
-cd server && cargo run --release
-
-# Run client (connects to server)
-./start-client.sh  
-# or
-cd client && cargo run --release
-
-# Run client with custom server URL
-CLIPBOARD_SERVER_URL=http://192.168.1.100:8080 ./start-client.sh
+CLIPBOARD_SERVER_URL=http://127.0.0.1:8080 ./start-client.sh
 ```
 
-#### Windows
+Windows (PowerShell or cmd):
 ```cmd
-REM Build entire workspace
-cargo build --release
-
-REM Build specific component
 cargo build --release --bin clipboard-server
 cargo build --release --bin clipboard-client
-
-REM Run server (defaults to 127.0.0.1:8080)
 start-server.bat
-REM or
-cd server && cargo run --release
-
-REM Run client (connects to server)
-start-client.bat
-REM or
-cd client && cargo run --release
-
-REM Run client with custom server URL
-set CLIPBOARD_SERVER_URL=http://192.168.1.100:8080
 start-client.bat
 ```
 
-### Development Commands
+Dev tooling:
 ```bash
-# Run tests
 cargo test
-
-# Check code
 cargo check
-
-# Format code
 cargo fmt
-
-# Run clippy linting
 cargo clippy
-
-# Run with debug logging
 RUST_LOG=debug cargo run --release --bin clipboard-server
 RUST_LOG=debug cargo run --release --bin clipboard-client
 ```
 
-### API Testing
+## API quick test
 ```bash
-# Get current clipboard content
 curl http://127.0.0.1:8080/api/clipboard
-
-# Set clipboard content  
 curl -X POST http://127.0.0.1:8080/api/clipboard \
   -H "Content-Type: application/json" \
-  -d '{"content": "Hello World!", "timestamp": 1694234567}'
-
-# Test examples
-./examples/api-usage.sh
+  -d '{"content":"Hello","content_type":"text","timestamp":1694234567}'
 ```
 
-## System Dependencies
+## System dependencies
 
-### Linux
+Linux runtime/build:
+- libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev (clipboard)
+- libdbus-1-dev (ksni tray)
 
-Before building on Linux, install required system packages:
+Windows:
+- No extra system packages; GUI/tray via tray-icon
 
-```bash
-# Ubuntu/Debian
-sudo apt install libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+## Data structures (client/server contract)
+- ClipboardData { content, html?, rtf?, image?, content_type, timestamp }
+- ClipboardMessage { type: "clipboard_update", data: ClipboardData }
 
-# Arch Linux
-sudo pacman -S libxcb
+## Logging
+- tracing + tracing-subscriber
+- RUST_LOG=debug|info|warn|error
 
-# Fedora  
-sudo dnf install libxcb-devel
-```
+## Security
+- Localhost bind by default; no auth; plaintext
+- For remote networks, put the server behind TLS reverse proxy
 
-**Requirements:**
-- Wayland compositor (Gnome, KDE, Sway, etc.)
-- wl-clipboard-rs compatible environment
-
-### Windows
-
-No additional system dependencies required on Windows. The client uses Windows API for clipboard access.
-
-**Requirements:**
-- Rust toolchain with MSVC or GNU target
-- Windows 7 or later
-
-## Development Notes
-
-### Server Architecture
-- Uses Warp web framework with filter-based routing
-- Maintains client connections in `HashMap<String, UnboundedSender>`
-- Global clipboard state stored in `Arc<Mutex<Option<ClipboardData>>>`
-- Broadcast channel distributes updates to all connected WebSocket clients
-
-### Client Architecture  
-- Polls local clipboard every 500ms for changes
-- Sends updates to server via HTTP POST to `/api/clipboard`
-- Receives updates from server via WebSocket connection
-- Platform-specific clipboard integration:
-  - Linux: wl-clipboard-rs for Wayland (multi-format support)
-  - Windows: PowerShell commands for basic clipboard access
-
-### Key Data Structures
-- `ClipboardData`: Contains `content`, `html`, `rtf`, `image`, `content_type`, and `timestamp`
-- `ClipboardMessage`: WebSocket message wrapper with `type` field and `data`
-- Server maintains both HTTP and WebSocket endpoints for flexibility
-- Multi-format support for rich text clipboard operations
-
-### Error Handling
-- Client gracefully handles clipboard access errors (common when clipboard is empty)
-- WebSocket disconnections trigger automatic client cleanup
-- HTTP requests include retry logic for network failures
-
-### Logging
-- Uses `tracing` crate for structured logging
-- Set `RUST_LOG=debug` for detailed operation logs
-- Set `RUST_LOG=info` for standard operation logs
-- Set `RUST_LOG=warn` for errors and warnings only
-
-## Configuration
-
-### Environment Variables
-- `CLIPBOARD_SERVER_URL`: Server URL for client (default: `http://127.0.0.1:8080`)
-- `RUST_LOG`: Logging level (`debug`, `info`, `warn`, `error`)
-- `WAYLAND_DISPLAY`: Wayland display (automatically detected)
-
-### Security Considerations
-- Server listens only on localhost by default
-- No authentication implemented - designed for trusted networks
-- Data transmitted in plaintext
-- Supports text, HTML, and RTF clipboard content (images temporarily disabled)
+See also: README.md for user-facing instructions and DOCKER.md for container notes.
