@@ -6,16 +6,17 @@
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use tray_icon::{TrayIconBuilder, menu::{MenuBuilder, MenuItem, SubmenuBuilder, MenuId, PredefinedMenuItem}, TrayIcon};
 
+use crate::tray::Tray;
+
 pub struct TrayController {
     connected: Arc<AtomicBool>,
     server_url: Arc<Mutex<String>>,
 tray: Arc<Mutex<Option<TrayIcon>>>,
 }
 
-impl TrayController {
-    pub fn set_connected(&self, connected: bool) {
+impl Tray for TrayController {
+    fn set_connected(&self, connected: bool) {
         self.connected.store(connected, Ordering::Relaxed);
-        // Optionally we could swap icon here based on connected state
     }
 }
 

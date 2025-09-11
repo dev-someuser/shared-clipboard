@@ -7,8 +7,8 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info, warn};
 use url::Url;
 
-mod clipboard_manager;
-use clipboard_manager::ClipboardManager;
+mod clipboard;
+use clipboard::{ClipboardManager, ClipboardBackend};
 
 #[cfg(target_os = "linux")]
 mod tray;
@@ -46,7 +46,7 @@ enum Command { SetUrl(String), OpenSettings, Quit }
 enum Event { Connected, Disconnected, UrlChanged(String), Error(String) }
 
 struct ClipboardClient {
-    clipboard_manager: ClipboardManager,
+    clipboard_manager: Box<dyn ClipboardBackend + Send>,
     http_client: HttpClient,
     url_tx: tokio::sync::watch::Sender<String>,
     url_rx: tokio::sync::watch::Receiver<String>,
@@ -54,15 +54,13 @@ struct ClipboardClient {
     evt_tx: tokio::sync::broadcast::Sender<Event>,
     last_local_content: String,
     last_local_image: Option<String>,
-    #[cfg(target_os = "linux")]
-    tray: Option<tray::TrayController>,
-    #[cfg(target_os = "windows")]
-    tray_win: Option<tray_win::TrayController>,
+    tray: Option<Box<dyn tray::Tray>>,
 }
 
 impl ClipboardClient {
     fn new(initial_url: String) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let clipboard_manager = ClipboardManager::new()?;
+        let clipboard_manager: Box<dyn ClipboardBackend + Send> = Box::new(clipboard_manager);
         let http_client = HttpClient::new();
         let (url_tx, url_rx) = tokio::sync::watch::channel(initial_url.clone());
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<Command>();
@@ -93,9 +91,9 @@ impl ClipboardClient {
         });
 
         #[cfg(target_os = "linux")]
-        let tray = Some(tray::start_tray(initial_url.clone(), cmd_tx.clone()));
+        let tray: Option<Box<dyn tray::Tray>> = Some(Box::new(tray::start_tray(initial_url.clone(), cmd_tx.clone())));
         #[cfg(target_os = "windows")]
-        let tray_win = Some(tray_win::start_tray(initial_url.clone(), cmd_tx.clone()));
+        let tray: Option<Box<dyn tray::Tray>> = Some(Box::new(tray_win::start_tray(initial_url.clone(), cmd_tx.clone())));
 
         Ok(Self {
             clipboard_manager,
@@ -106,10 +104,7 @@ impl ClipboardClient {
             evt_tx,
             last_local_content: String::new(),
             last_local_image: None,
-            #[cfg(target_os = "linux")]
             tray,
-            #[cfg(target_os = "windows")]
-            tray_win,
         })
     }
 
@@ -138,14 +133,7 @@ impl ClipboardClient {
         info!("Connected to WebSocket server");
         
         // Update tray connectivity status
-        #[cfg(target_os = "linux")]
-        if let Some(tray) = &self.tray {
-            tray.set_connected(true);
-        }
-        #[cfg(target_os = "windows")]
-        if let Some(tray) = &self.tray_win {
-            tray.set_connected(true);
-        }
+        if let Some(tray) = &self.tray { tray.set_connected(true); }
         
         let (_ws_sender, mut ws_receiver) = ws_stream.split();
 
@@ -316,14 +304,7 @@ impl ClipboardClient {
         }
 
         // Mark tray as disconnected before returning
-        #[cfg(target_os = "linux")]
-        if let Some(tray) = &self.tray {
-            tray.set_connected(false);
-        }
-        #[cfg(target_os = "windows")]
-        if let Some(tray) = &self.tray_win {
-            tray.set_connected(false);
-        }
+        if let Some(tray) = &self.tray { tray.set_connected(false); }
 
         Ok(())
     }

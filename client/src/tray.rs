@@ -4,6 +4,8 @@
 #[cfg(target_os = "linux")]
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 
+pub trait Tray: Send + Sync { fn set_connected(&self, connected: bool); }
+
 #[cfg(target_os = "linux")]
 pub struct TrayController {
     connected: Arc<AtomicBool>,
@@ -12,8 +14,8 @@ pub struct TrayController {
 }
 
 #[cfg(target_os = "linux")]
-impl TrayController {
-    pub fn set_connected(&self, connected: bool) {
+impl Tray for TrayController {
+    fn set_connected(&self, connected: bool) {
         self.connected.store(connected, Ordering::Relaxed);
         self.handle.update(|t| {
             t.set_connected(connected);
@@ -156,7 +158,7 @@ impl ksni::Tray for AppTray {
 #[cfg(not(target_os = "linux"))]
 pub struct TrayController;
 #[cfg(not(target_os = "linux"))]
-impl TrayController { pub fn set_connected(&self, _connected: bool) {} }
+impl Tray for TrayController { fn set_connected(&self, _connected: bool) {} }
 #[cfg(not(target_os = "linux"))]
 pub fn start_tray(_server_url: String) -> TrayController { TrayController }
 
