@@ -9,7 +9,7 @@ use tray_icon::{TrayIconBuilder, menu::{MenuBuilder, MenuItem, SubmenuBuilder, M
 pub struct TrayController {
     connected: Arc<AtomicBool>,
     server_url: Arc<Mutex<String>>,
-    tray: Arc<Mutex<Option<TrayIcon>>>>,
+tray: Arc<Mutex<Option<TrayIcon>>>,
 }
 
 impl TrayController {
@@ -19,7 +19,7 @@ impl TrayController {
     }
 }
 
-pub fn start_tray(server_url: String, on_new_url: impl Fn(String) + Send + Sync + 'static) -> TrayController {
+pub fn start_tray(server_url: String, cmd_tx: tokio::sync::mpsc::UnboundedSender<crate::Command>) -> TrayController {
     let connected = Arc::new(AtomicBool::new(false));
     let server_url_arc = Arc::new(Mutex::new(server_url.clone()));
 
@@ -51,7 +51,7 @@ pub fn start_tray(server_url: String, on_new_url: impl Fn(String) + Send + Sync 
         let server_url_for_cb = server_url_arc.clone();
         let connected_for_cb = connected.clone();
         let tray_ref = tray_arc.clone();
-        let on_new_url = Arc::new(on_new_url);
+        let cmd_tx = cmd_tx.clone();
         std::thread::spawn(move || {
             for event in MenuEvent::receiver().iter() {
                 match event.id.as_ref() {
@@ -60,7 +60,7 @@ pub fn start_tray(server_url: String, on_new_url: impl Fn(String) + Send + Sync 
                         let is_conn = connected_for_cb.load(Ordering::Relaxed);
                         if let Some(new_url) = crate::settings::open_settings_blocking(url, is_conn) {
                             *server_url_for_cb.lock().unwrap() = new_url.clone();
-                            on_new_url(new_url);
+                            let _ = cmd_tx.send(crate::Command::SetUrl(new_url));
                             // Update status text
                             if let Some(tray) = tray_ref.lock().unwrap().as_ref() {
                                 if let Some(menu) = tray.menu() {
@@ -69,7 +69,7 @@ pub fn start_tray(server_url: String, on_new_url: impl Fn(String) + Send + Sync 
                             }
                         }
                     }
-                    "Quit" => { std::process::exit(0); }
+                    "Quit" => { let _ = cmd_tx.send(crate::Command::Quit); }
                     _ => {}
                 }
             }

@@ -10,7 +10,7 @@ repository.workspace = true
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
-reqwest = { version = "0.11", features = ["json", "stream"] }
+reqwest = { version = "0.11", features = ["json", "stream", "blocking"] }
 tokio-tungstenite = "0.18"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -18,23 +18,15 @@ futures-util = "0.3"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 url = "2.0"
-
-# Settings GUI feature toggles eframe (pinned to 0.24 to avoid `image` v0.25)
-[features]
-# Disable by default; enable with `--features settings_gui`
-settings_gui = ["dep:eframe", "dep:winit"]
-
-auto-settings = []
+dirs = "5"
+# Features section removed; eframe is included by default
 
 [dependencies.eframe]
-version = "=0.24.1"
-optional = true
-default-features = false
-features = ["glow", "default_fonts"]
+version = "0.28.1"
+optional = false
+# Use default features so we get a working native stack
 
-[dependencies.winit]
-version = "0.28"
-optional = true
+default-features = true
 
 # Platform-specific clipboard dependencies
 [target.'cfg(target_os = "linux")'.dependencies]

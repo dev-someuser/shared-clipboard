@@ -1,9 +1,8 @@
-#[cfg(feature = "settings_gui")]
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
-// Wrapper used by tray: on Linux, spawn a separate process to own the GUI main thread.
-#[cfg(all(feature = "settings_gui", target_os = "linux"))]
+// На Linux запускаем отдельный процесс с флагом --settings и передаем URL через аргументы.
+#[cfg(target_os = "linux")]
 pub fn open_settings_blocking(current_url: String, connected: bool) -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     let status_flag = if connected { "--connected" } else { "--disconnected" };
@@ -19,12 +18,11 @@ pub fn open_settings_blocking(current_url: String, connected: bool) -> Option<St
 }
 
 // Non-Linux or direct UI path: run UI in-process
-#[cfg(all(feature = "settings_gui", not(target_os = "linux")))]
+#[cfg(not(target_os = "linux"))]
 pub fn open_settings_blocking(current_url: String, connected: bool) -> Option<String> {
     run_settings_ui(current_url, connected)
 }
 
-#[cfg(feature = "settings_gui")]
 pub fn run_settings_ui(current_url: String, connected: bool) -> Option<String> {
     struct App {
         url_input: String,
@@ -102,12 +100,13 @@ pub fn run_settings_ui(current_url: String, connected: bool) -> Option<String> {
 
     fn test_connect(base: &str) -> String {
         let url = format!("{}/api/clipboard", base.trim_end_matches('/'));
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(async move {
-            let client = reqwest::Client::new();
-            client.get(url).timeout(std::time::Duration::from_secs(3)).send().await
-        });
-        match result {
+        let client = match reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(3))
+            .build() {
+            Ok(c) => c,
+            Err(e) => return format!("Error: {}", e),
+        };
+        match client.get(url).send() {
             Ok(resp) => format!("HTTP {}", resp.status()),
             Err(e) => format!("Error: {}", e),
         }
@@ -116,32 +115,15 @@ pub fn run_settings_ui(current_url: String, connected: bool) -> Option<String> {
     let saved_url = Arc::new(Mutex::new(None));
     let app = App { url_input: current_url.clone(), connected, test_result: None, saved_url: saved_url.clone(), did_setup: false };
 
-    // Configure event loop to allow creation on a non-main thread (Linux)
-    let mut native_options = eframe::NativeOptions::default();
-    #[cfg(target_family = "unix")]
-    {
-        // winit 0.28 exposes backend-specific traits for any_thread
-        use winit::platform::wayland::EventLoopBuilderExtWayland;
-        use winit::platform::x11::EventLoopBuilderExtX11;
-        native_options.event_loop_builder = Some(Box::new(|builder| {
-            // Call both; only one will be effective depending on backend
-            winit::platform::wayland::EventLoopBuilderExtWayland::with_any_thread(builder, true);
-            winit::platform::x11::EventLoopBuilderExtX11::with_any_thread(builder, true);
-        }));
-    }
+    // Default options; eframe/winit handle platform specifics
+    let native_options = eframe::NativeOptions::default();
 
     let _ = eframe::run_native(
         "Settings",
         native_options,
-        Box::new(|_cc| Box::new(app)),
+        Box::new(|_cc| Ok(Box::new(app))),
     );
 
     Arc::try_unwrap(saved_url).ok().and_then(|m| m.into_inner().ok()).and_then(|v| v)
-}
-
-// Stub when settings_gui feature is disabled
-#[cfg(not(feature = "settings_gui"))]
-pub fn open_settings_blocking(_current_url: String, _connected: bool) -> Option<String> {
-    None
 }
 
