@@ -33,7 +33,7 @@ pub fn run_settings_ui(current_url: String, connected: bool) -> Option<String> {
     }
 
     impl eframe::App for App {
-        fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
             if !self.did_setup {
                 // Force a sensible scale factor in case winit provides 0 or very small values
                 ctx.set_pixels_per_point(1.5);

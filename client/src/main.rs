@@ -40,18 +40,13 @@ struct ClipboardMessage {
 }
 
 #[derive(Clone, Debug)]
-enum Command { SetUrl(String), OpenSettings, Quit }
-
-#[derive(Clone, Debug)]
-enum Event { Connected, Disconnected, UrlChanged(String), Error(String) }
+enum Command { SetUrl(String), Quit }
 
 struct ClipboardClient {
     clipboard_manager: Box<dyn ClipboardBackend + Send>,
     http_client: HttpClient,
     url_tx: tokio::sync::watch::Sender<String>,
     url_rx: tokio::sync::watch::Receiver<String>,
-    cmd_tx: tokio::sync::mpsc::UnboundedSender<Command>,
-    evt_tx: tokio::sync::broadcast::Sender<Event>,
     last_local_content: String,
     last_local_image: Option<String>,
     tray: Option<Box<dyn tray::Tray>>,
@@ -64,11 +59,9 @@ impl ClipboardClient {
         let http_client = HttpClient::new();
         let (url_tx, url_rx) = tokio::sync::watch::channel(initial_url.clone());
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<Command>();
-        let (evt_tx, _evt_rx) = tokio::sync::broadcast::channel::<Event>(16);
 
         // Command loop
         let url_tx_clone = url_tx.clone();
-        let evt_tx_clone = evt_tx.clone();
         tokio::spawn(async move {
             while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
@@ -77,15 +70,11 @@ impl ClipboardClient {
                         let changed = url_tx_clone.send_if_modified(|cur| {
                             if *cur != u { *cur = u.clone(); true } else { false }
                         });
-                        if changed {
-                            let _ = evt_tx_clone.send(Event::UrlChanged(String::new()));
-                        }
+                        // no-op if not changed
                     }
                     Command::Quit => {
-                        let _ = evt_tx_clone.send(Event::Disconnected);
                         break;
                     }
-                    Command::OpenSettings => {}
                 }
             }
         });
@@ -100,8 +89,6 @@ impl ClipboardClient {
             http_client,
             url_tx,
             url_rx,
-            cmd_tx,
-            evt_tx,
             last_local_content: String::new(),
             last_local_image: None,
             tray,
@@ -143,7 +130,7 @@ impl ClipboardClient {
         // Start clipboard monitoring task
         let clipboard_manager_for_monitor = shared_clipboard_manager.clone();
         let http_client = self.http_client.clone();
-        let mut url_rx_for_monitor = self.url_rx.clone();
+        let url_rx_for_monitor = self.url_rx.clone();
         
         let monitor_task = tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(100)); // frequent polling
@@ -157,7 +144,6 @@ impl ClipboardClient {
                 let clipboard_result = {
                     let mut attempts = 0;
                     const MAX_ATTEMPTS: u8 = 3;
-                    let mut last_error = None;
                     
                     loop {
                         attempts += 1;
@@ -168,8 +154,7 @@ impl ClipboardClient {
                         
                         match result {
                             Ok(data) => break Ok(data),
-                            Err(e) if attempts < MAX_ATTEMPTS => {
-                                last_error = Some(e);
+                            Err(_e) if attempts < MAX_ATTEMPTS => {
                                 // Small delay between retries
                                 tokio::time::sleep(Duration::from_millis(10)).await;
                                 continue;

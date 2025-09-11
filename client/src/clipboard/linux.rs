@@ -1,6 +1,6 @@
 use crate::ClipboardData;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, warn};
+use tracing::debug;
 use super::ClipboardBackend;
 
 use wl_clipboard_rs::{
